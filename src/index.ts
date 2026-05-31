@@ -1,18 +1,22 @@
 import { tool } from "@lmstudio/sdk";
 import { z } from "zod";
+import * as path from "path";
+import * as os from "os";
+import dotenv from "dotenv";
 import { omniMindGraph } from "./orchestrator/graph";
 import { HumanMessage } from "@langchain/core/messages";
 import { VectorStore } from "./vectorstore/db";
 import { EmbeddingPipeline } from "./ingestion/embedder";
-import path from "path";
-import os from "os";
 import { ObsidianVaultWatcher } from "./ingestion/obsidian";
 import { ZoteroExtractor } from "./ingestion/zotero";
+
+dotenv.config();
 
 // Global instances for the plugin
 export let vectorStore: VectorStore;
 export let embedder: EmbeddingPipeline;
 export let obsidianWatcher: ObsidianVaultWatcher;
+export let zoteroExtractor: ZoteroExtractor;
 export let lmClient: any;
 
 const searchGraphTool = tool({
@@ -55,10 +59,6 @@ export async function main(context: any) {
   vectorStore = new VectorStore(dbPath);
   await vectorStore.initialize();
   console.log("Vector Store initialized successfully!");
-
-  // 3. Start Obsidian Ingestion (Replace this path with your actual vault path!)
-  const mockVaultPath = "C:\\Users\\PC\\AppData\\Local\\SynologyDrive\\SystemFolders\\4\\Obsidian\\research";
-  obsidianWatcher = new ObsidianVaultWatcher(mockVaultPath);
   
   // Register the tool provider so it shows up in LM Studio's chat UI
   if (context && context.withToolsProvider) {
@@ -86,7 +86,39 @@ export async function main(context: any) {
         isProcessing = false;
       }
 
-      // Now start the watcher since we have the client to do embeddings
+      // 3. Start Obsidian Ingestion
+      const vaultPath = process.env.OBSIDIAN_VAULT_PATH || "C:\\Users\\PC\\AppData\\Local\\SynologyDrive\\SystemFolders\\4\\Obsidian\\research";
+      obsidianWatcher = new ObsidianVaultWatcher(vaultPath);
+
+      // 4. Start Zotero Ingestion
+      const zoteroDbPath = process.env.ZOTERO_DB_PATH || "E:\\Zotero\\zotero.sqlite";
+      const zoteroStoragePath = process.env.ZOTERO_STORAGE_PATH || "E:\\Zotero\\storage";
+      
+      zoteroExtractor = new ZoteroExtractor(zoteroDbPath, zoteroStoragePath, lmClient);
+
+      console.log("Started watching Obsidian vault:", vaultPath);
+      console.log("Starting Zotero database extraction:", zoteroDbPath);
+
+      // Kick off Zotero Extraction asynchronously
+      zoteroExtractor.extractLibrary(async (item) => {
+        // Enqueue the Zotero PDF for processing
+        processingQueue.push(async () => {
+          if (!item.textContent) return;
+          console.log(`Processing Zotero PDF: ${item.title}`);
+          await embedder.processDocument(
+            "zotero",
+            item.key, // We use citation key as path/reference
+            item.textContent, 
+            [],
+            async (batch) => {
+              await vectorStore.upsertChunks(batch);
+            }
+          );
+        });
+        processQueue();
+      }).catch(err => console.error("Zotero extraction failed:", err));
+
+      // 5. Watch Obsidian Vault
       obsidianWatcher.watch(async (filePath: string) => {
         processingQueue.push(async () => {
           const note = obsidianWatcher.parseNote(filePath);
