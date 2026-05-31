@@ -110,6 +110,7 @@ export class VectorStore {
       else if (row.source === 'zotero') uniquePaths.zotero.add(row.path as string);
     }
     
+    stats.totalChunks = results.length;
     stats.sources.obsidian = uniquePaths.obsidian.size;
     stats.sources.zotero = uniquePaths.zotero.size;
     return stats;
