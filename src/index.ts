@@ -9,6 +9,11 @@ import { VectorStore } from "./vectorstore/db";
 import { EmbeddingPipeline } from "./ingestion/embedder";
 import { ObsidianVaultWatcher } from "./ingestion/obsidian";
 import { ZoteroExtractor } from "./ingestion/zotero";
+import { SyncTracker } from "./ingestion/tracker";
+import * as http from "http";
+import * as fs from "fs";
+
+export let ingestionState: 'RUNNING' | 'PAUSED' = 'RUNNING';
 
 dotenv.config();
 
@@ -17,6 +22,7 @@ export let vectorStore: VectorStore;
 export let embedder: EmbeddingPipeline;
 export let obsidianWatcher: ObsidianVaultWatcher;
 export let zoteroExtractor: ZoteroExtractor;
+export let syncTracker: SyncTracker;
 export let lmClient: any;
 
 const searchGraphTool = tool({
@@ -52,13 +58,12 @@ export const toolsProvider = {
 export async function main(context: any) {
   console.log("OmniMind plugin activated with LangGraph orchestration!");
   
-  // The embedder will be initialized when the tools provider factory is called by LM Studio.
-  
-  // 2. Initialize LanceDB inside the user's home directory (cross-OS safe)
-  const dbPath = path.join(os.homedir(), ".omnimind");
-  vectorStore = new VectorStore(dbPath);
+  const workspaceDir = path.join(os.homedir(), ".omnimind");
+  vectorStore = new VectorStore(workspaceDir);
   await vectorStore.initialize();
   console.log("Vector Store initialized successfully!");
+  
+  syncTracker = new SyncTracker(workspaceDir);
   
   // Register the tool provider so it shows up in LM Studio's chat UI
   if (context && context.withToolsProvider) {
@@ -69,7 +74,6 @@ export async function main(context: any) {
       // Initialize embedder with the injected client from the controller
       embedder = new EmbeddingPipeline(lmClient);
       
-      // Add a simple async queue to prevent Out-Of-Memory errors when Chokidar floods us with files on initial scan
       const processingQueue: (() => Promise<void>)[] = [];
       let isProcessing = false;
 
@@ -77,6 +81,9 @@ export async function main(context: any) {
         if (isProcessing) return;
         isProcessing = true;
         while (processingQueue.length > 0) {
+          if (ingestionState === 'PAUSED') {
+            break;
+          }
           const task = processingQueue.shift();
           if (task) {
             try { await task(); } 
@@ -94,7 +101,13 @@ export async function main(context: any) {
       const zoteroDbPath = process.env.ZOTERO_DB_PATH || "E:\\Zotero\\zotero.sqlite";
       const zoteroStoragePath = process.env.ZOTERO_STORAGE_PATH || "E:\\Zotero\\storage";
       
-      zoteroExtractor = new ZoteroExtractor(zoteroDbPath, zoteroStoragePath, lmClient);
+      zoteroExtractor = new ZoteroExtractor(
+        zoteroDbPath, 
+        zoteroStoragePath, 
+        lmClient, 
+        syncTracker,
+        () => ingestionState
+      );
 
       console.log("Started watching Obsidian vault:", vaultPath);
       console.log("Starting Zotero database extraction:", zoteroDbPath);
@@ -105,6 +118,9 @@ export async function main(context: any) {
         processingQueue.push(async () => {
           if (!item.textContent) return;
           console.log(`Processing Zotero PDF: ${item.title}`);
+          
+          await vectorStore.deleteByPath(item.key); // delete any existing vectors for this cite key
+
           await embedder.processDocument(
             "zotero",
             item.key, // We use citation key as path/reference
@@ -114,32 +130,116 @@ export async function main(context: any) {
               await vectorStore.upsertChunks(batch);
             }
           );
+
+          syncTracker.markZoteroComplete(item.key);
         });
-        processQueue();
-      }).catch(err => console.error("Zotero extraction failed:", err));
+      }).then(() => { processQueue(); }).catch(err => console.error("Zotero extraction failed:", err));
+
+      // 5. Start HTTP Control Server
+      const server = http.createServer((req, res) => {
+        if (req.method === 'GET' && req.url === '/') {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <html>
+            <head>
+              <title>OmniMind Control Panel</title>
+              <style>
+                body { font-family: system-ui; background: #1e1e1e; color: #fff; text-align: center; padding: 50px; }
+                button { padding: 15px 30px; margin: 10px; font-size: 18px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; }
+                .pause { background: #e74c3c; color: white; }
+                .resume { background: #2ecc71; color: white; }
+                .status { font-size: 24px; margin-top: 30px; font-weight: bold; }
+                .paused-text { color: #e74c3c; }
+                .running-text { color: #2ecc71; }
+              </style>
+            </head>
+            <body>
+              <h1>OmniMind Ingestion Control</h1>
+              <p>Current Queue Length: <span id="queueLen">${processingQueue.length}</span></p>
+              <div class="status">Status: <span id="stateText" class="${ingestionState === 'PAUSED' ? 'paused-text' : 'running-text'}">${ingestionState}</span></div>
+              <br/>
+              <button class="pause" onclick="fetch('/api/pause', {method:'POST'}).then(() => location.reload())">⏸️ Pause Extraction</button>
+              <button class="resume" onclick="fetch('/api/resume', {method:'POST'}).then(() => location.reload())">▶️ Resume Extraction</button>
+              <script>
+                setInterval(() => {
+                  fetch('/api/status').then(r => r.json()).then(data => {
+                    document.getElementById('queueLen').innerText = data.queueLength;
+                    const st = document.getElementById('stateText');
+                    st.innerText = data.state;
+                    st.className = data.state === 'PAUSED' ? 'paused-text' : 'running-text';
+                  });
+                }, 2000);
+              </script>
+            </body>
+            </html>
+          `);
+        } else if (req.method === 'POST' && req.url === '/api/pause') {
+          ingestionState = 'PAUSED';
+          res.writeHead(200); res.end('PAUSED');
+          console.log("[Control Server] Ingestion PAUSED by user.");
+        } else if (req.method === 'POST' && req.url === '/api/resume') {
+          ingestionState = 'RUNNING';
+          processQueue(); // Kick off the queue again!
+          res.writeHead(200); res.end('RUNNING');
+          console.log("[Control Server] Ingestion RESUMED by user.");
+        } else if (req.method === 'GET' && req.url === '/api/status') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ state: ingestionState, queueLength: processingQueue.length }));
+        } else {
+          res.writeHead(404); res.end();
+        }
+      });
+      server.listen(4733, () => {
+        console.log("OmniMind Control Panel running at http://localhost:4733");
+      });
 
       // 5. Watch Obsidian Vault
-      obsidianWatcher.watch(async (filePath: string) => {
-        processingQueue.push(async () => {
-          const note = obsidianWatcher.parseNote(filePath);
-          if (!note) return;
-          
-          console.log(`Embedding updated note: ${note.title}`);
-          const totalChunks = await embedder.processDocument(
-            "obsidian", 
-            note.filePath, 
-            note.content, 
-            note.links,
-            async (batch) => {
-              await vectorStore.upsertChunks(batch);
+      obsidianWatcher.watch(
+        async (filePath: string) => {
+          processingQueue.push(async () => {
+            let mtimeMs = 0;
+            try {
+              mtimeMs = fs.statSync(filePath).mtimeMs;
+            } catch (e) {
+              return; // File deleted before stat
             }
-          );
-          console.log(`Saved ${totalChunks} chunks to LanceDB for ${note.title}`);
-        });
-        processQueue();
-      }, async (filePath) => {
-        console.log(`Note removed (deletion from vector store not yet implemented): ${filePath}`);
-      });
+
+            if (syncTracker.getObsidianMtime(filePath) === mtimeMs) {
+              return; // Already processed!
+            }
+
+            const note = obsidianWatcher.parseNote(filePath);
+            if (!note) return;
+
+            console.log(`Processing Obsidian note: ${note.title}`);
+            
+            // Delete old vectors before upserting the new edited note
+            await vectorStore.deleteByPath(note.filePath);
+
+            await embedder.processDocument(
+              "obsidian",
+              note.filePath,
+              note.content,
+              note.links,
+              async (batch) => {
+                await vectorStore.upsertChunks(batch);
+              }
+            );
+
+            syncTracker.markObsidianComplete(filePath, mtimeMs);
+          });
+          processQueue();
+        },
+        async (filePath: string) => {
+          // File was deleted
+          processingQueue.push(async () => {
+            console.log(`Removing deleted Obsidian note: ${filePath}`);
+            await vectorStore.deleteByPath(filePath);
+            syncTracker.markObsidianDeleted(filePath);
+          });
+          processQueue();
+        }
+      );
       
       // LM Studio expects an array of tools to map over
       return toolsProvider.tools;

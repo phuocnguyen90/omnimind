@@ -2,6 +2,7 @@ import initSqlJs from 'sql.js';
 import fs from 'fs';
 import path from 'path';
 import pdfParse from 'pdf-parse';
+import { SyncTracker } from './tracker';
 
 export interface ZoteroItem {
   key: string;       // The unique citation key (e.g. 8-character hash)
@@ -14,11 +15,15 @@ export class ZoteroExtractor {
   private dbPath: string;
   private storagePath: string;
   private lmClient: any;
+  private syncTracker: SyncTracker;
+  private getState?: () => 'RUNNING' | 'PAUSED';
 
-  constructor(dbPath: string, storagePath: string, lmClient: any) {
+  constructor(dbPath: string, storagePath: string, lmClient: any, syncTracker: SyncTracker, getState?: () => 'RUNNING' | 'PAUSED') {
     this.dbPath = dbPath;
     this.storagePath = storagePath;
     this.lmClient = lmClient;
+    this.syncTracker = syncTracker;
+    this.getState = getState;
   }
 
   /**
@@ -85,32 +90,49 @@ export class ZoteroExtractor {
     }
 
     for (let i = 0; i < numPages; i++) {
-      try {
-        console.log(`[Hybrid OCR] Processing page ${i+1}/${numPages} for ${fileName}...`);
-        const page = document.loadPage(i);
-        
-        // Render at 2x resolution for better OCR
-        const matrix = mupdf.Matrix.scale(2, 2);
-        const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
-        
-        // Convert to PNG binary and then to base64
-        const pngData = pixmap.asPNG();
-        const base64Image = Buffer.from(pngData).toString('base64');
-        
-        // Upload temporary image to LM Studio
-        const fileHandle = await this.lmClient.files.prepareImageBase64(`page_${i}.png`, base64Image);
+      let success = false;
+      let scale = 2; // start with high resolution
+      let retryCount = 0;
 
-        const response = await model.respond([
-          { role: "system", content: systemPrompt },
-          { role: "user", content: "Extract this page as Markdown." }
-        ], {
-          images: [fileHandle],
-          temperature: 0.1 // Low temperature for factual extraction
-        });
+      while (!success && retryCount < 3) {
+        try {
+          console.log(`[Hybrid OCR] Processing page ${i+1}/${numPages} for ${fileName} at scale ${scale}x...`);
+          const page = document.loadPage(i);
+          
+          const matrix = mupdf.Matrix.scale(scale, scale);
+          const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
+          
+          const pngData = pixmap.asPNG();
+          const base64Image = Buffer.from(pngData).toString('base64');
+          
+          const fileHandle = await this.lmClient.files.prepareImageBase64(`page_${i}.png`, base64Image);
 
-        fullMarkdown += `\n\n<!-- Page ${i+1} -->\n\n` + response.content;
-      } catch (e) {
-         console.warn(`[Hybrid OCR] Failed to OCR page ${i+1} of ${fileName}:`, e);
+          const response = await model.respond([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: "Extract this page as Markdown." }
+          ], {
+            images: [fileHandle],
+            temperature: 0.1
+          });
+
+          fullMarkdown += `\n\n<!-- Page ${i+1} -->\n\n` + response.content;
+          success = true;
+
+        } catch (e: any) {
+           const errMsg = e.message || e.toString();
+           if (errMsg.includes("Context size") || errMsg.includes("exceeded")) {
+             console.warn(`[Hybrid OCR] Context size exceeded on page ${i+1} at scale ${scale}x. Downgrading resolution...`);
+             scale = scale * 0.5; // Half the resolution to drastically reduce image tokens
+             retryCount++;
+           } else {
+             console.warn(`[Hybrid OCR] Failed to OCR page ${i+1} of ${fileName}:`, e);
+             break; // Unknown error, skip this page
+           }
+        }
+      }
+      
+      if (!success) {
+        console.warn(`[Hybrid OCR] Abandoned page ${i+1} of ${fileName} after multiple resolution downgrades.`);
       }
     }
 
@@ -158,6 +180,12 @@ export class ZoteroExtractor {
 
     await new Promise<void>((resolve, reject) => {
       const next = () => {
+        // Respect Global Pause State
+        if (this.getState && this.getState() === 'PAUSED') {
+          setTimeout(next, 1000);
+          return;
+        }
+
         if (index >= rows.length && activeWorkers === 0) {
           resolve();
           return;
@@ -185,8 +213,15 @@ export class ZoteroExtractor {
   }
 
   private async processRow(row: any, onItemParsed: (item: ZoteroItem) => Promise<void>) {
+    const key = row.storage_key as string;
+    
+    // Resume Tracking / Deduplication Check
+    if (this.syncTracker.hasZotero(key)) {
+      return; // Skip this file!
+    }
+
     const fileName = (row.file_name as string).replace('storage:', '');
-    const storageDir = path.join(this.storagePath, row.storage_key as string);
+    const storageDir = path.join(this.storagePath, key);
     const pdfFilePath = path.join(storageDir, fileName);
 
     let textContent: string | null = null;

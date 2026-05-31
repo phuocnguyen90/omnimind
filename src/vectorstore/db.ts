@@ -45,6 +45,24 @@ export class VectorStore {
   }
 
   /**
+   * Deletes all chunks associated with a specific file path or citation key.
+   */
+  public async deleteByPath(path: string) {
+    if (!this.db) throw new Error("Database not initialized");
+    const tableNames = await this.db.tableNames();
+    if (tableNames.includes(this.tableName)) {
+      const table = await this.db.openTable(this.tableName);
+      // Ensure we escape quotes just in case, LanceDB SQL uses backticks or standard SQL quoting depending on schema, usually standard SQL string literal ''
+      const safePath = path.replace(/'/g, "''");
+      try {
+        await table.delete(`path = '${safePath}'`);
+      } catch (e) {
+        console.error(`Failed to delete old chunks for path: ${path}`, e);
+      }
+    }
+  }
+
+  /**
    * Performs a vector similarity search.
    */
   public async search(queryVector: number[], limit: number = 5): Promise<DocumentChunk[]> {
