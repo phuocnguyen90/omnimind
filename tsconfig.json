@@ -13,5 +13,5 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "exclude": ["ui", "dist", "test_embed.ts", "test_tracker.ts"]
+  "exclude": ["ui", "dist", "test_embed.ts", "test_tracker.ts", "lm_studio_big_rag_plugin"]
 }
