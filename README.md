@@ -1,36 +1,87 @@
-# omnimind
+# OmniMind 🧠
 
-#### Created with LM Studio scaffold: node-typescript
+OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin built on top of [LM Studio](https://lmstudio.ai/). It acts as a bridge between your local LLMs and your personal knowledge base, seamlessly ingesting your **Obsidian Vault** and **Zotero Library** into a local vector database for instant, private semantic search and chat.
 
-Welcome to your new project! This scaffold is a starting point for building an AI-enabled Node.js project with [LM Studio](https://lmstudio.ai/) SDK. To interact with LM Studio, you should start the LM Studio local server with the command:
+---
+
+## ✨ Features
+
+*   **100% Local Privacy**: Everything—from your academic PDFs and personal notes to the embedding models and vector database—runs locally on your machine.
+*   **Dual Ingestion Engine**:
+    *   **Obsidian Sync**: Live-watches your Obsidian vault for modifications and instantly updates vector embeddings as you write.
+    *   **Zotero Integration**: Scans your local Zotero SQLite database and processes the linked PDFs.
+*   **Hybrid Vision OCR**: Employs an intelligent fallback system using local Vision Models. If a PDF lacks a proper text layer, OmniMind automatically parses the raw pages through a Vision LLM to extract high-fidelity text.
+*   **Premium Web Control Panel**: Features a sleek Vite + React dashboard running securely in the background, allowing you to monitor the ingestion queue, pause/resume tasks, retry failed jobs, and browse your raw LanceDB vector chunks.
+*   **LanceDB Vector Store**: Uses LanceDB for blazing-fast, serverless semantic search with optimistic concurrency controls.
+*   **LangGraph Orchestration**: Advanced agentic workflows to intelligently decide when to query the knowledge graph or answer directly.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+1.  **LM Studio** installed and running.
+2.  **Node.js** (v20+ recommended).
+3.  Load an **Embedding Model** in LM Studio (e.g., `nomic-embed-text`).
+4.  *(Optional)* Load a **Vision Model** in LM Studio if you have scanned PDFs that require OCR. Ensure "Keep multiple models in memory" is enabled.
+
+### Installation
+
+Clone the repository and install dependencies:
 
 ```bash
-lms server start
+npm install
+cd ui && npm install && npm run build
+cd ..
 ```
 
-## Getting Started
+### Configuration
 
-### Development
+Ensure the following paths match your system setup in your `.env` or system environment variables:
 
-The source code resides in the `src/` directory. For development purposes, you can run the project using:
-
-```start
-npm start
+```env
+OBSIDIAN_VAULT_PATH="C:\Path\To\Your\Obsidian\Vault"
+ZOTERO_DB_PATH="C:\Path\To\Your\Zotero\zotero.sqlite"
+ZOTERO_STORAGE_PATH="C:\Path\To\Your\Zotero\storage"
+MAX_CONCURRENT_WORKERS=4
 ```
 
-### Building for Production
+### Running the Plugin
 
-To prepare your project for production, compile the TypeScript code to JavaScript using:
+Start the plugin server:
 
 ```bash
-npm run build
+lms dev
 ```
 
-This will compile the TypeScript code in the `src/` directory to JavaScript in the `dist/` directory.
+1. Open LM Studio.
+2. The OmniMind plugin will automatically register as a tool.
+3. Open a chat, and the ingestion engine will kick off automatically, parsing your Zotero and Obsidian vaults in the background.
 
-### Community & Help
+---
 
-- [lmstudio.js GitHub](https://github.com/lmstudio-ai/lmstudio.js)
-- [Documentation](https://lmstudio.ai/docs/welcome)
-- [Discord](https://discord.gg/6Q7Xn6MRVS)
-- [Twitter](https://twitter.com/LMStudioAI)
+## 🎛️ Control Panel
+
+Once the plugin is running, navigate to:
+
+**[http://localhost:4733](http://localhost:4733)**
+
+The Control Panel provides a real-time dashboard to:
+- Monitor **Pending**, **Processing**, and **Completed** ingestion tasks.
+- **Pause/Resume** the queue to manage local CPU/GPU load.
+- Browse the exact vector chunks that have been extracted and embedded into your LanceDB knowledge graph.
+
+---
+
+## 🛠️ Tech Stack
+
+*   **Backend**: Node.js, TypeScript, `@lmstudio/sdk`
+*   **Frontend**: React, Vite, CSS (No-Tailwind)
+*   **Vector Database**: LanceDB
+*   **PDF Processing**: `mupdf`
+*   **Orchestration**: LangGraph
+
+## 📝 License
+
+MIT License. See `LICENSE` for more information.
