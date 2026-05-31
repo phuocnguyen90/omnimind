@@ -77,8 +77,8 @@ export class ZoteroExtractor {
               fs.writeFileSync(cacheFilePath, text);
             }
           }
-        } catch (lmErr) {
-          console.warn(`[Fast Parser] LM Studio parse failed for ${fileName}, falling back to local OCR.`, lmErr);
+        } catch (lmErr: any) {
+          console.warn(`[Fast Parser] LM Studio parse failed for ${fileName}: ${lmErr.message || 'Unknown error'}. Falling back to local OCR.`);
         }
 
         if (!textContent) {
