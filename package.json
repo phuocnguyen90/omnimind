@@ -1,0 +1,28 @@
+{
+  "name": "omnimind",
+  "version": "0.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "start": "tsc && node --enable-source-maps dist/index.js",
+    "build": "tsc"
+  },
+  "author": "Your Name",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@lancedb/lancedb": "^0.16.0",
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.46",
+    "@lmstudio/sdk": "^1.5.0",
+    "better-sqlite3": "^11.8.1",
+    "chokidar": "^4.0.3",
+    "pdf-parse": "^1.1.1",
+    "zod": "^3.24.2"
+  },
+  "gitHead": "d95ce2feb067b4eec446c673155631ee1734e982",
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "typescript": "^5.7.2"
+  }
+}

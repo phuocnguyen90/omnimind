@@ -1,0 +1,5 @@
+refs
+node_modules
+dist/
+.lancedb/
+.lmstudio/

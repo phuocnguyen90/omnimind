@@ -1,0 +1,26 @@
+{
+  "$schema": "./../scaffold-json-schema-v1.json",
+  "scaffoldVersion": 1,
+  "name": "node-typescript-empty",
+  "displayName": "Node.js with TypeScript (Empty)",
+  "description": "Minimalistic Node.js TypeScript empty project with lmstudio.js",
+  "args": [
+    {
+      "name": "Project Name",
+      "default": "node-typescript-empty",
+      "replaceFrom": ["omnimind", "omnimind"],
+      "isProjectName": true
+    }
+  ],
+  "renames": [{ "from": "gitignore_template", "to": ".gitignore" }],
+  "motd": [
+    { "type": "title", "text": "✓ Project Creation Successful" },
+    {
+      "type": "regular",
+      "text": "An empty Node.js TypeScript project with lmstudio.js has been created in the <hl>omnimind</hl> folder. You can enter it with:"
+    },
+    { "type": "command", "text": "cd omnimind" },
+    { "type": "regular", "text": "Then you can run the project with:" },
+    { "type": "command", "text": "npm start" }
+  ]
+}
