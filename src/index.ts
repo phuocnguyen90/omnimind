@@ -414,7 +414,23 @@ export async function main(context: any) {
       console.log("Starting Zotero database extraction:", zoteroDbPath);
 
       // Instantly populate the Queue with Pending Jobs
-      zoteroExtractor.discoverJobs(jobQueue).catch(err => console.error("Zotero Discovery Failed:", err));
+      zoteroExtractor.discoverJobs(jobQueue).then(async (validKeys: string[]) => {
+        const validKeySet = new Set(validKeys);
+        const trackedKeys = syncTracker.getAllZoteroKeys();
+        
+        let orphanCount = 0;
+        for (const key of trackedKeys) {
+          if (!validKeySet.has(key)) {
+            console.log(`[Zotero Cleanup] Deleting stale vectors for orphaned item: ${key}`);
+            await vectorStore.deleteByPath(key);
+            syncTracker.removeZoteroKey(key);
+            orphanCount++;
+          }
+        }
+        if (orphanCount > 0) {
+          console.log(`[Zotero Cleanup] Cleaned up ${orphanCount} orphaned papers from LanceDB.`);
+        }
+      }).catch(err => console.error("Zotero Discovery Failed:", err));
 
 
 

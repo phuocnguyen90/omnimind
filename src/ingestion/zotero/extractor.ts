@@ -29,7 +29,7 @@ export class ZoteroExtractor {
     }
   }
 
-  public async discoverJobs(jobQueue: JobQueue): Promise<void> {
+  public async discoverJobs(jobQueue: JobQueue): Promise<string[]> {
     return this.zoteroDB.discoverJobs(jobQueue);
   }
 

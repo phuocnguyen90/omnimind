@@ -47,6 +47,15 @@ export class SyncTracker {
     this.saveState();
   }
 
+  public getAllZoteroKeys(): string[] {
+    return Object.keys(this.state.zotero);
+  }
+
+  public removeZoteroKey(key: string) {
+    delete this.state.zotero[key];
+    this.saveState();
+  }
+
   // --- Obsidian ---
 
   public getObsidianMtime(filepath: string): number | undefined {
