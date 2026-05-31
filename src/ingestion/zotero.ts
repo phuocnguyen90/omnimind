@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import pdfParse from 'pdf-parse';
 import { SyncTracker } from './tracker';
+import { JobQueue } from './queue';
 
 export interface ZoteroItem {
   key: string;       // The unique citation key (e.g. 8-character hash)
@@ -16,14 +17,19 @@ export class ZoteroExtractor {
   private storagePath: string;
   private lmClient: any;
   private syncTracker: SyncTracker;
-  private getState?: () => 'RUNNING' | 'PAUSED';
+  private cacheDir: string;
 
-  constructor(dbPath: string, storagePath: string, lmClient: any, syncTracker: SyncTracker, getState?: () => 'RUNNING' | 'PAUSED') {
+  constructor(dbPath: string, storagePath: string, lmClient: any, syncTracker: SyncTracker) {
     this.dbPath = dbPath;
     this.storagePath = storagePath;
     this.lmClient = lmClient;
     this.syncTracker = syncTracker;
-    this.getState = getState;
+
+    const workspaceDir = path.join(require('os').homedir(), ".omnimind");
+    this.cacheDir = path.join(workspaceDir, "ocr_cache");
+    if (!fs.existsSync(this.cacheDir)) {
+      fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
   }
 
   /**
@@ -45,8 +51,9 @@ export class ZoteroExtractor {
 
   /**
    * Runs the PDF through a Vision Model via LM Studio for high-fidelity OCR extraction.
+   * Caches progress to disk page-by-page so it can resume mid-way.
    */
-  private async runVisionOCR(pdfFilePath: string, fileName: string): Promise<string> {
+  private async runVisionOCR(pdfFilePath: string, fileName: string, cacheFilePath: string): Promise<string> {
     if (!this.lmClient) {
       console.warn(`[Hybrid OCR] lmClient not provided. Cannot run OCR on ${fileName}.`);
       return "";
@@ -75,8 +82,31 @@ export class ZoteroExtractor {
 
     const numPages = document.countPages();
     let fullMarkdown = "";
+    let startPage = 0;
 
-    console.log(`[Hybrid OCR] ${fileName} failed heuristics. Extracting ${numPages} pages using Vision OCR...`);
+    // PAGE-LEVEL RESUMPTION LOGIC
+    if (fs.existsSync(cacheFilePath)) {
+      fullMarkdown = fs.readFileSync(cacheFilePath, 'utf-8');
+      
+      // Look for all <!-- Page X --> markers to find the highest completed page
+      const pageRegex = /<!-- Page (\d+) -->/g;
+      let match;
+      let highestPage = 0;
+      while ((match = pageRegex.exec(fullMarkdown)) !== null) {
+        const pageNum = parseInt(match[1], 10);
+        if (pageNum > highestPage) highestPage = pageNum;
+      }
+      
+      startPage = highestPage;
+      if (startPage >= numPages) {
+        console.log(`[Cache Hit] Skipping OCR for ${fileName}, fully completed in cache.`);
+        return fullMarkdown;
+      } else if (startPage > 0) {
+        console.log(`[Hybrid OCR] Resuming ${fileName} from page ${startPage + 1}/${numPages}...`);
+      }
+    } else {
+      console.log(`[Hybrid OCR] ${fileName} failed heuristics. Extracting ${numPages} pages using Vision OCR...`);
+    }
 
     const systemPrompt = "You are an advanced academic OCR system. Convert this PDF page to exact Markdown. Preserve all headers, tables, mathematical equations (as LaTeX), and text. Do not add any conversational text or formatting outside of the actual document content.";
 
@@ -86,10 +116,10 @@ export class ZoteroExtractor {
       model = await this.lmClient.llm.model(); 
     } catch (e) {
       console.warn("[Hybrid OCR] No model loaded in LM Studio! Falling back to raw text.", e);
-      return "";
+      return fullMarkdown;
     }
 
-    for (let i = 0; i < numPages; i++) {
+    for (let i = startPage; i < numPages; i++) {
       let success = false;
       let scale = 2; // start with high resolution
       let retryCount = 0;
@@ -115,7 +145,12 @@ export class ZoteroExtractor {
             temperature: 0.1
           });
 
-          fullMarkdown += `\n\n<!-- Page ${i+1} -->\n\n` + response.content;
+          const pageMarkdown = `\n\n<!-- Page ${i+1} -->\n\n` + response.content;
+          fullMarkdown += pageMarkdown;
+          
+          // Stream safely to disk page-by-page
+          fs.appendFileSync(cacheFilePath, pageMarkdown);
+          
           success = true;
 
         } catch (e: any) {
@@ -140,15 +175,13 @@ export class ZoteroExtractor {
   }
 
   /**
-   * Connects to the SQLite database in read-only mode to prevent locking issues
-   * with the active Zotero client. Yields items sequentially to prevent OOM.
+   * Fast discovery phase: Scans the SQLite DB and populates the JobQueue with pending PDFs.
    */
-  public async extractLibrary(onItemParsed: (item: ZoteroItem) => Promise<void>): Promise<void> {
+  public async discoverJobs(jobQueue: JobQueue): Promise<void> {
     if (!fs.existsSync(this.dbPath)) {
       throw new Error(`Zotero database not found at ${this.dbPath}`);
     }
 
-    // Initialize the WASM SQLite engine (completely bypasses OS native bindings!)
     const SQL = await initSqlJs();
     const filebuffer = fs.readFileSync(this.dbPath);
     const db = new SQL.Database(filebuffer);
@@ -164,107 +197,89 @@ export class ZoteroExtractor {
     `;
 
     const stmt = db.prepare(query);
-    const rows: any[] = [];
     while (stmt.step()) {
-      rows.push(stmt.getAsObject());
+      const row = stmt.getAsObject();
+      const key = row.storage_key as string;
+      const fileName = (row.file_name as string).replace('storage:', '');
+      
+      if (!this.syncTracker.hasZotero(key)) {
+        jobQueue.addJob({
+          id: key,
+          type: 'zotero',
+          title: fileName,
+          payload: row
+        });
+      }
     }
     stmt.free();
     db.close();
-
-    // Parse each PDF concurrently based on parameterized limit
-    const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS || "4", 10);
-    console.log(`[Zotero] Starting extraction with ${maxConcurrentWorkers} concurrent workers...`);
     
-    let activeWorkers = 0;
-    let index = 0;
-
-    await new Promise<void>((resolve, reject) => {
-      const next = () => {
-        // Respect Global Pause State
-        if (this.getState && this.getState() === 'PAUSED') {
-          setTimeout(next, 1000);
-          return;
-        }
-
-        if (index >= rows.length && activeWorkers === 0) {
-          resolve();
-          return;
-        }
-        
-        while (activeWorkers < maxConcurrentWorkers && index < rows.length) {
-          const row = rows[index++];
-          activeWorkers++;
-          
-          this.processRow(row, onItemParsed)
-            .then(() => {
-              activeWorkers--;
-              next();
-            })
-            .catch((err) => {
-              console.error(`[Zotero] Worker failed on row ${row.file_name}`, err);
-              activeWorkers--;
-              next();
-            });
-        }
-      };
-      
-      next();
-    });
+    console.log(`[Zotero] Discovery complete. Pending jobs added to queue.`);
   }
 
-  private async processRow(row: any, onItemParsed: (item: ZoteroItem) => Promise<void>) {
-    const key = row.storage_key as string;
-    
-    // Resume Tracking / Deduplication Check
-    if (this.syncTracker.hasZotero(key)) {
-      return; // Skip this file!
-    }
-
-    const fileName = (row.file_name as string).replace('storage:', '');
+  /**
+   * Execution Phase: Processes a single job and returns the text content.
+   */
+  public async executeJob(jobPayload: any): Promise<ZoteroItem> {
+    const key = jobPayload.storage_key as string;
+    const fileName = (jobPayload.file_name as string).replace('storage:', '');
     const storageDir = path.join(this.storagePath, key);
     const pdfFilePath = path.join(storageDir, fileName);
 
     let textContent: string | null = null;
-    let pdfPathToStore: string | null = null;
+    const cacheFilePath = path.join(this.cacheDir, `${key}.md`);
 
-    if (fs.existsSync(pdfFilePath)) {
-      pdfPathToStore = pdfFilePath;
+    // 1. Check if we have a full cache hit without OCR (fallback for pdf-parse)
+    if (fs.existsSync(cacheFilePath)) {
+      // If the file exists, we read it. If it doesn't have Page markers, it's a pdf-parse cache.
+      // If it does have Page markers, we pass it to runVisionOCR anyway to resume it.
+      const cachedContent = fs.readFileSync(cacheFilePath, 'utf-8');
+      if (!cachedContent.includes("<!-- Page ")) {
+         console.log(`[Cache Hit] Skipping extraction for ${fileName}, reading pdf-parse from cache.`);
+         textContent = cachedContent;
+      }
+    }
+    
+    if (!textContent) {
+      // 2. Perform Extraction
+      if (!fs.existsSync(pdfFilePath)) {
+        throw new Error(`PDF not found: ${pdfFilePath}`);
+      }
+
       try {
         const dataBuffer = fs.readFileSync(pdfFilePath);
         const pdfParseFn = (pdfParse as any).default || pdfParse;
         
-        // Suppress pdf-parse warnings to keep the terminal clean
         const originalWarn = console.warn;
         console.warn = () => {};
-        
         const data = await pdfParseFn(dataBuffer);
-        
-        // Restore console.warn
         console.warn = originalWarn;
         
         textContent = data.text;
 
         // --- HYBRID OCR PIPELINE ---
         if (this.needsOCR(textContent || "", data.numpages || 1)) {
-          const visionMarkdown = await this.runVisionOCR(pdfFilePath, fileName);
+          // Pass the cache file path so it can stream progress and resume!
+          const visionMarkdown = await this.runVisionOCR(pdfFilePath, fileName, cacheFilePath);
           if (visionMarkdown.trim().length > 0) {
             textContent = visionMarkdown;
           }
+        } else {
+          // Save standard PDF-Parse to cache so we never OCR this again
+          if (textContent && textContent.trim().length > 0) {
+            fs.writeFileSync(cacheFilePath, textContent);
+          }
         }
-        // ---------------------------
-
-      } catch (err) {
-        console.error(`Failed to parse PDF at ${pdfFilePath}`, err);
+      } catch (err: any) {
+        throw new Error(`Failed to parse PDF at ${pdfFilePath}: ${err.message}`);
       }
     }
 
-    if (textContent) {
-      await onItemParsed({
-        key: row.storage_key as string,
-        title: fileName,
-        pdfPath: pdfPathToStore,
-        textContent,
-      });
-    }
+    return {
+      key,
+      title: fileName,
+      pdfPath: pdfFilePath,
+      textContent,
+    };
   }
 }

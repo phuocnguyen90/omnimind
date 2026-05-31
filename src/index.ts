@@ -10,6 +10,7 @@ import { EmbeddingPipeline } from "./ingestion/embedder";
 import { ObsidianVaultWatcher } from "./ingestion/obsidian";
 import { ZoteroExtractor } from "./ingestion/zotero";
 import { SyncTracker } from "./ingestion/tracker";
+import { JobQueue, Job } from "./ingestion/queue";
 import * as http from "http";
 import * as fs from "fs";
 
@@ -73,71 +74,62 @@ export async function main(context: any) {
       
       // Initialize embedder with the injected client from the controller
       embedder = new EmbeddingPipeline(lmClient);
-      
-      const processingQueue: (() => Promise<void>)[] = [];
-      let isProcessing = false;
+      // Initialize the proper JobQueue
+      const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS || "4", 10);
+      const jobQueue = new JobQueue(maxConcurrentWorkers);
 
-      async function processQueue() {
-        if (isProcessing) return;
-        isProcessing = true;
-        while (processingQueue.length > 0) {
-          if (ingestionState === 'PAUSED') {
-            break;
+      // Handle the Execution Phase dynamically as jobs are popped from the queue
+      jobQueue.on('process_job', async (job: Job, done: (err?: Error) => void) => {
+        try {
+          if (job.type === 'zotero') {
+            console.log(`[JobQueue] Executing Zotero Job: ${job.title}`);
+            const item = await zoteroExtractor.executeJob(job.payload);
+            
+            if (item.textContent) {
+              await vectorStore.deleteByPath(item.key); // deduplicate
+              await embedder.processDocument("zotero", item.key, item.textContent, [], async (batch) => {
+                await vectorStore.upsertChunks(batch);
+              });
+              syncTracker.markZoteroComplete(item.key);
+              console.log(`[Success] Saved vectors to LanceDB and marked ${item.title} as complete!`);
+            }
+          } else if (job.type === 'obsidian') {
+            console.log(`[JobQueue] Executing Obsidian Job: ${job.title}`);
+            const note = obsidianWatcher.parseNote(job.id);
+            if (note) {
+              await vectorStore.deleteByPath(note.filePath);
+              await embedder.processDocument("obsidian", note.filePath, note.content, note.links, async (batch) => {
+                await vectorStore.upsertChunks(batch);
+              });
+              syncTracker.markObsidianComplete(job.id, job.payload.mtimeMs);
+            }
           }
-          const task = processingQueue.shift();
-          if (task) {
-            try { await task(); } 
-            catch (e) { console.error(e); }
-          }
+          done();
+        } catch (err: any) {
+          done(err);
         }
-        isProcessing = false;
-      }
+      });
 
       // 3. Start Obsidian Ingestion
       const vaultPath = process.env.OBSIDIAN_VAULT_PATH || "C:\\Users\\PC\\AppData\\Local\\SynologyDrive\\SystemFolders\\4\\Obsidian\\research";
       obsidianWatcher = new ObsidianVaultWatcher(vaultPath);
 
-      // 4. Start Zotero Ingestion
+      // 4. Start Zotero Ingestion (Discovery Phase)
       const zoteroDbPath = process.env.ZOTERO_DB_PATH || "E:\\Zotero\\zotero.sqlite";
       const zoteroStoragePath = process.env.ZOTERO_STORAGE_PATH || "E:\\Zotero\\storage";
       
-      zoteroExtractor = new ZoteroExtractor(
-        zoteroDbPath, 
-        zoteroStoragePath, 
-        lmClient, 
-        syncTracker,
-        () => ingestionState
-      );
+      zoteroExtractor = new ZoteroExtractor(zoteroDbPath, zoteroStoragePath, lmClient, syncTracker);
 
       console.log("Started watching Obsidian vault:", vaultPath);
       console.log("Starting Zotero database extraction:", zoteroDbPath);
 
-      // Kick off Zotero Extraction asynchronously
-      zoteroExtractor.extractLibrary(async (item) => {
-        // Enqueue the Zotero PDF for processing
-        processingQueue.push(async () => {
-          if (!item.textContent) return;
-          console.log(`Processing Zotero PDF: ${item.title}`);
-          
-          await vectorStore.deleteByPath(item.key); // delete any existing vectors for this cite key
-
-          await embedder.processDocument(
-            "zotero",
-            item.key, // We use citation key as path/reference
-            item.textContent, 
-            [],
-            async (batch) => {
-              await vectorStore.upsertChunks(batch);
-            }
-          );
-
-          syncTracker.markZoteroComplete(item.key);
-        });
-      }).then(() => { processQueue(); }).catch(err => console.error("Zotero extraction failed:", err));
+      // Instantly populate the Queue with Pending Jobs
+      zoteroExtractor.discoverJobs(jobQueue).catch(err => console.error("Zotero Discovery Failed:", err));
 
       // 5. Start HTTP Control Server
       const server = http.createServer((req, res) => {
         if (req.method === 'GET' && req.url === '/') {
+          const stats = jobQueue.getStats();
           res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end(`
             <html>
@@ -148,43 +140,59 @@ export async function main(context: any) {
                 button { padding: 15px 30px; margin: 10px; font-size: 18px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; }
                 .pause { background: #e74c3c; color: white; }
                 .resume { background: #2ecc71; color: white; }
+                .retry { background: #f39c12; color: white; }
                 .status { font-size: 24px; margin-top: 30px; font-weight: bold; }
                 .paused-text { color: #e74c3c; }
                 .running-text { color: #2ecc71; }
+                .stats { display: flex; justify-content: center; gap: 20px; font-size: 20px; margin: 30px 0; }
+                .stat-box { background: #2c3e50; padding: 20px; border-radius: 10px; width: 120px; }
               </style>
             </head>
             <body>
-              <h1>OmniMind Ingestion Control</h1>
-              <p>Current Queue Length: <span id="queueLen">${processingQueue.length}</span></p>
-              <div class="status">Status: <span id="stateText" class="${ingestionState === 'PAUSED' ? 'paused-text' : 'running-text'}">${ingestionState}</span></div>
+              <h1>OmniMind Job Queue</h1>
+              <div class="stats">
+                <div class="stat-box">Total<br><b id="st-total">${stats.total}</b></div>
+                <div class="stat-box">Pending<br><b id="st-pending">${stats.pending}</b></div>
+                <div class="stat-box">Processing<br><b id="st-processing">${stats.processing}</b></div>
+                <div class="stat-box">Completed<br><b id="st-completed">${stats.completed}</b></div>
+                <div class="stat-box" style="color:#e74c3c;">Failed<br><b id="st-failed">${stats.failed}</b></div>
+              </div>
+              
+              <div class="status">Status: <span id="stateText" class="${jobQueue.getState() === 'PAUSED' ? 'paused-text' : 'running-text'}">${jobQueue.getState()}</span></div>
               <br/>
-              <button class="pause" onclick="fetch('/api/pause', {method:'POST'}).then(() => location.reload())">⏸️ Pause Extraction</button>
-              <button class="resume" onclick="fetch('/api/resume', {method:'POST'}).then(() => location.reload())">▶️ Resume Extraction</button>
+              <button class="pause" onclick="fetch('/api/pause', {method:'POST'})">⏸️ Pause Queue</button>
+              <button class="resume" onclick="fetch('/api/resume', {method:'POST'})">▶️ Resume Queue</button>
+              <button class="retry" onclick="fetch('/api/retry', {method:'POST'})">🔄 Retry Failed</button>
               <script>
                 setInterval(() => {
                   fetch('/api/status').then(r => r.json()).then(data => {
-                    document.getElementById('queueLen').innerText = data.queueLength;
+                    document.getElementById('st-total').innerText = data.stats.total;
+                    document.getElementById('st-pending').innerText = data.stats.pending;
+                    document.getElementById('st-processing').innerText = data.stats.processing;
+                    document.getElementById('st-completed').innerText = data.stats.completed;
+                    document.getElementById('st-failed').innerText = data.stats.failed;
+                    
                     const st = document.getElementById('stateText');
                     st.innerText = data.state;
                     st.className = data.state === 'PAUSED' ? 'paused-text' : 'running-text';
                   });
-                }, 2000);
+                }, 1000);
               </script>
             </body>
             </html>
           `);
         } else if (req.method === 'POST' && req.url === '/api/pause') {
-          ingestionState = 'PAUSED';
+          jobQueue.pause();
           res.writeHead(200); res.end('PAUSED');
-          console.log("[Control Server] Ingestion PAUSED by user.");
         } else if (req.method === 'POST' && req.url === '/api/resume') {
-          ingestionState = 'RUNNING';
-          processQueue(); // Kick off the queue again!
+          jobQueue.resume();
           res.writeHead(200); res.end('RUNNING');
-          console.log("[Control Server] Ingestion RESUMED by user.");
+        } else if (req.method === 'POST' && req.url === '/api/retry') {
+          jobQueue.retryFailed();
+          res.writeHead(200); res.end('RETRIED');
         } else if (req.method === 'GET' && req.url === '/api/status') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ state: ingestionState, queueLength: processingQueue.length }));
+          res.end(JSON.stringify({ state: jobQueue.getState(), stats: jobQueue.getStats() }));
         } else {
           res.writeHead(404); res.end();
         }
@@ -193,51 +201,32 @@ export async function main(context: any) {
         console.log("OmniMind Control Panel running at http://localhost:4733");
       });
 
-      // 5. Watch Obsidian Vault
+      // 6. Watch Obsidian Vault
       obsidianWatcher.watch(
         async (filePath: string) => {
-          processingQueue.push(async () => {
-            let mtimeMs = 0;
-            try {
-              mtimeMs = fs.statSync(filePath).mtimeMs;
-            } catch (e) {
-              return; // File deleted before stat
-            }
+          let mtimeMs = 0;
+          try {
+            mtimeMs = fs.statSync(filePath).mtimeMs;
+          } catch (e) {
+            return; // File deleted before stat
+          }
 
-            if (syncTracker.getObsidianMtime(filePath) === mtimeMs) {
-              return; // Already processed!
-            }
+          if (syncTracker.getObsidianMtime(filePath) === mtimeMs) {
+            return; // Already processed!
+          }
 
-            const note = obsidianWatcher.parseNote(filePath);
-            if (!note) return;
-
-            console.log(`Processing Obsidian note: ${note.title}`);
-            
-            // Delete old vectors before upserting the new edited note
-            await vectorStore.deleteByPath(note.filePath);
-
-            await embedder.processDocument(
-              "obsidian",
-              note.filePath,
-              note.content,
-              note.links,
-              async (batch) => {
-                await vectorStore.upsertChunks(batch);
-              }
-            );
-
-            syncTracker.markObsidianComplete(filePath, mtimeMs);
+          jobQueue.addJob({
+            id: filePath,
+            type: 'obsidian',
+            title: path.basename(filePath),
+            payload: { mtimeMs }
           });
-          processQueue();
         },
         async (filePath: string) => {
           // File was deleted
-          processingQueue.push(async () => {
-            console.log(`Removing deleted Obsidian note: ${filePath}`);
-            await vectorStore.deleteByPath(filePath);
-            syncTracker.markObsidianDeleted(filePath);
-          });
-          processQueue();
+          console.log(`[Obsidian Watcher] Deleting stale vectors for ${filePath}`);
+          await vectorStore.deleteByPath(filePath);
+          syncTracker.markObsidianDeleted(filePath);
         }
       );
       

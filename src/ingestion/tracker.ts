@@ -29,13 +29,11 @@ export class SyncTracker {
   }
 
   private saveState() {
-    // Basic debounce to prevent heavy disk I/O when lots of files process at once
-    if (this.pendingSave) return;
-    this.pendingSave = true;
-    setTimeout(() => {
+    try {
       fs.writeFileSync(this.stateFilePath, JSON.stringify(this.state, null, 2));
-      this.pendingSave = false;
-    }, 1000);
+    } catch (e) {
+      console.error("[SyncTracker] Failed to write sync_state.json:", e);
+    }
   }
 
   // --- Zotero ---
