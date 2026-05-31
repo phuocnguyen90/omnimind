@@ -14,6 +14,22 @@ export class VectorStore {
   private dbPath: string;
   private db: lancedb.Connection | null = null;
   private tableName = 'knowledge_graph';
+  private writeLock: Promise<void> = Promise.resolve();
+
+  private async acquireWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+    const previousLock = this.writeLock;
+    let releaseLock: () => void;
+    this.writeLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      await previousLock;
+      return await operation();
+    } finally {
+      releaseLock!();
+    }
+  }
 
   constructor(workspaceDir: string) {
     // Store the LanceDB data within the plugin's workspace or a dedicated directory
@@ -32,16 +48,18 @@ export class VectorStore {
     if (!this.db) throw new Error("Database not initialized");
     if (chunks.length === 0) return;
 
-    const tableNames = await this.db.tableNames();
-    
-    // If table exists, open it. Otherwise create it.
-    let table: lancedb.Table;
-    if (tableNames.includes(this.tableName)) {
-      table = await this.db.openTable(this.tableName);
-      await table.add(chunks);
-    } else {
-      table = await this.db.createTable(this.tableName, chunks);
-    }
+    await this.acquireWriteLock(async () => {
+      const tableNames = await this.db!.tableNames();
+      
+      // If table exists, open it. Otherwise create it.
+      let table: lancedb.Table;
+      if (tableNames.includes(this.tableName)) {
+        table = await this.db!.openTable(this.tableName);
+        await table.add(chunks);
+      } else {
+        table = await this.db!.createTable(this.tableName, chunks);
+      }
+    });
   }
 
   /**
@@ -49,17 +67,20 @@ export class VectorStore {
    */
   public async deleteByPath(path: string) {
     if (!this.db) throw new Error("Database not initialized");
-    const tableNames = await this.db.tableNames();
-    if (tableNames.includes(this.tableName)) {
-      const table = await this.db.openTable(this.tableName);
-      // Ensure we escape quotes just in case, LanceDB SQL uses backticks or standard SQL quoting depending on schema, usually standard SQL string literal ''
-      const safePath = path.replace(/'/g, "''");
-      try {
-        await table.delete(`path = '${safePath}'`);
-      } catch (e) {
-        console.error(`Failed to delete old chunks for path: ${path}`, e);
+    
+    await this.acquireWriteLock(async () => {
+      const tableNames = await this.db!.tableNames();
+      if (tableNames.includes(this.tableName)) {
+        const table = await this.db!.openTable(this.tableName);
+        // Ensure we escape quotes just in case, LanceDB SQL uses backticks or standard SQL quoting depending on schema, usually standard SQL string literal ''
+        const safePath = path.replace(/'/g, "''");
+        try {
+          await table.delete(`path = '${safePath}'`);
+        } catch (e) {
+          console.error(`Failed to delete old chunks for path: ${path}`, e);
+        }
       }
-    }
+    });
   }
 
   /**
