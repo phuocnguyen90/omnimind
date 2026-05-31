@@ -4,7 +4,7 @@ import { zoteroExtractor, embedder, vectorStore } from "../index";
 
 export const getPaperInfoTool = tool({
   name: "get_paper_info",
-  description: "Fetch exact metadata (Title, Authors, Year, DOI, Abstract, PDF path) for a specific Zotero paper using a title fragment, author, or DOI.",
+  description: "Fetch exact metadata (Title, Authors, Year, DOI, Abstract, PDF path) for a specific Zotero paper using a title fragment, author, or DOI. Use this ONLY when you need exact reference data.",
   parameters: {
     query: z.string().describe("Title fragment, author's last name, or DOI to search in Zotero.")
   },
@@ -18,7 +18,7 @@ export const getPaperInfoTool = tool({
 
 export const searchAcademicReferencesTool = tool({
   name: "search_academic_references",
-  description: "Semantic vector search specifically restricted to Zotero academic papers.",
+  description: "Perform a semantic vector search restricted exclusively to Zotero academic papers. Use this when the user is specifically asking to find academic literature, studies, or papers.",
   parameters: {
     query: z.string().describe("The search query."),
     limit: z.number().optional().describe("Number of results to return (default 5).")
@@ -34,7 +34,7 @@ export const searchAcademicReferencesTool = tool({
 
 export const clusterPapersTool = tool({
   name: "cluster_papers",
-  description: "Semantically cluster papers based on a broad topic or query to find common themes.",
+  description: "Semantically cluster academic papers based on a broad topic or query to find common themes and groupings.",
   parameters: {
     query: z.string().describe("The broad topic to fetch papers for clustering."),
     k: z.number().optional().describe("Number of clusters to generate (default 3).")

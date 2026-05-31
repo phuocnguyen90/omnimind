@@ -7,7 +7,7 @@ import { writeObsidianNoteTool, readObsidianNoteTool, editObsidianNoteTool, sear
 
 export const searchGraphTool = tool({
   name: "search_knowledge_graph",
-  description: "Search the local Obsidian and Zotero knowledge graph for relevant context. Use this whenever the user asks about their notes or papers.",
+  description: "Perform a semantic LangGraph search across both Obsidian and Zotero simultaneously to answer complex, multi-hop questions. Do NOT use this if you need to read, write, edit, or fetch specific paper metadata; use the dedicated specialized tools instead.",
   parameters: {
     query: z.string().describe("The search query to retrieve relevant notes and papers.")
   },

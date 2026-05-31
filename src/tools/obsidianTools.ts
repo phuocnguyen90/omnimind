@@ -99,7 +99,7 @@ export const editObsidianNoteTool = tool({
 
 export const searchPersonalNotesTool = tool({
   name: "search_personal_notes",
-  description: "Semantic vector search specifically restricted to local Obsidian personal notes.",
+  description: "Perform a semantic vector search restricted exclusively to the user's local Obsidian Markdown notes. Use this to find specific personal thoughts, logs, or drafts.",
   parameters: {
     query: z.string().describe("The search query."),
     limit: z.number().optional().describe("Number of results to return (default 5).")
