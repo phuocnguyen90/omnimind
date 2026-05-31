@@ -223,14 +223,14 @@ export async function main(context: any) {
               if (err) {
                 res.writeHead(500); res.end('UI not built. Run npm run build in ui/ folder.');
               } else {
-                res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(content, 'utf-8');
+                res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' }); res.end(content, 'utf-8');
               }
             });
           } else {
             res.writeHead(500); res.end('Server error: ' + error.code);
           }
         } else {
-          res.writeHead(200, { 'Content-Type': contentType }); res.end(content, 'utf-8');
+          res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store, no-cache, must-revalidate' }); res.end(content, 'utf-8');
         }
       });
     } catch (err: any) {
