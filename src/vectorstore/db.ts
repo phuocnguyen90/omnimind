@@ -1,6 +1,12 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 
+/**
+ * IMPORTANT: This must remain a `type` and NOT an `interface`.
+ * LanceDB's TypeScript definitions expect arrays of `Record<string, unknown>`.
+ * `type` aliases implicitly satisfy index signatures, while `interface` declarations do not.
+ * Changing this to an `interface` will cause fatal TypeScript compiler errors during `table.add()`.
+ */
 export type DocumentChunk = {
   id: string; // Unique ID (e.g. hash of content or source path + index)
   vector: number[]; // The embedding vector
@@ -118,7 +124,8 @@ export class VectorStore {
     let results: any[] = [];
     const stats = { totalChunks: 0, sources: { obsidian: 0, zotero: 0 } };
     try {
-      results = await table.query().select(['source', 'path']).toArray();
+      stats.totalChunks = await table.countRows();
+      results = await table.query().select(['source', 'path']).limit(100000).toArray();
     } catch (e) {
       console.warn("Schema mismatch, returning empty stats.");
       return stats;
@@ -131,7 +138,6 @@ export class VectorStore {
       else if (row.source === 'zotero') uniquePaths.zotero.add(row.path as string);
     }
     
-    stats.totalChunks = results.length;
     stats.sources.obsidian = uniquePaths.obsidian.size;
     stats.sources.zotero = uniquePaths.zotero.size;
     return stats;
@@ -144,7 +150,7 @@ export class VectorStore {
     const table = await this.db.openTable(this.tableName);
     let results: any[] = [];
     try {
-      results = await table.query().select(['source', 'path']).toArray();
+      results = await table.query().select(['source', 'path']).limit(100000).toArray();
     } catch (e) {
       console.warn("Schema mismatch, returning empty sources.");
       return [];
