@@ -37,6 +37,7 @@ export class ZoteroOCR {
     // Dynamically import mupdf to bypass CommonJS 'require' errors for ESM modules with top-level await
     let mupdf: any;
     try {
+      // @ts-ignore
       mupdf = await import('mupdf');
     } catch (err) {
       console.error(`[Hybrid OCR] Failed to load mupdf dynamically:`, err);

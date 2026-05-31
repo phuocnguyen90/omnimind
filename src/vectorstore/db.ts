@@ -1,14 +1,14 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 
-export interface DocumentChunk {
+export type DocumentChunk = {
   id: string; // Unique ID (e.g. hash of content or source path + index)
   vector: number[]; // The embedding vector
   source: 'obsidian' | 'zotero';
   path: string; // File path or citation key
   text: string; // The raw text content
   links_to: string; // Comma separated list of wikilinks (LanceDB has limited support for string arrays depending on schema, storing as string is safer)
-}
+};
 
 export class VectorStore {
   private dbPath: string;
@@ -86,5 +86,70 @@ export class VectorStore {
 
     const results = await query.toArray();
     return results as unknown as DocumentChunk[];
+  }
+
+  public async getStats() {
+    if (!this.db) return { totalChunks: 0, sources: { obsidian: 0, zotero: 0 } };
+    const tableNames = await this.db.tableNames();
+    if (!tableNames.includes(this.tableName)) return { totalChunks: 0, sources: { obsidian: 0, zotero: 0 } };
+    const table = await this.db.openTable(this.tableName);
+    // Fetch a small subset of fields to compute stats. LanceDB JS doesn't have aggregate COUNT yet.
+    let results: any[] = [];
+    const stats = { totalChunks: 0, sources: { obsidian: 0, zotero: 0 } };
+    try {
+      results = await table.query().select(['source', 'path']).toArray();
+    } catch (e) {
+      console.warn("Schema mismatch, returning empty stats.");
+      return stats;
+    }
+    
+    const uniquePaths = { obsidian: new Set<string>(), zotero: new Set<string>() };
+    
+    for (const row of results) {
+      if (row.source === 'obsidian') uniquePaths.obsidian.add(row.path as string);
+      else if (row.source === 'zotero') uniquePaths.zotero.add(row.path as string);
+    }
+    
+    stats.sources.obsidian = uniquePaths.obsidian.size;
+    stats.sources.zotero = uniquePaths.zotero.size;
+    return stats;
+  }
+
+  public async getSources() {
+    if (!this.db) return [];
+    const tableNames = await this.db.tableNames();
+    if (!tableNames.includes(this.tableName)) return [];
+    const table = await this.db.openTable(this.tableName);
+    let results: any[] = [];
+    try {
+      results = await table.query().select(['source', 'path']).toArray();
+    } catch (e) {
+      console.warn("Schema mismatch, returning empty sources.");
+      return [];
+    }
+    
+    const unique = new Map<string, any>();
+    for (const row of results) {
+      if (!unique.has(row.path as string)) {
+        unique.set(row.path as string, { path: row.path, source: row.source });
+      }
+    }
+    return Array.from(unique.values());
+  }
+
+  public async getChunksByPath(path: string) {
+    if (!this.db) return [];
+    const tableNames = await this.db.tableNames();
+    if (!tableNames.includes(this.tableName)) return [];
+    const table = await this.db.openTable(this.tableName);
+    const safePath = path.replace(/'/g, "''");
+    let results: any[] = [];
+    try {
+      results = await table.query().where(`path = '${safePath}'`).select(['id', 'text']).toArray();
+    } catch (e) {
+      console.warn(`Failed to query chunks for ${path}`, e);
+      return [];
+    }
+    return results;
   }
 }

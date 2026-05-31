@@ -12,5 +12,6 @@
     "skipLibCheck": true,
     "rootDir": "src",
     "outDir": "dist"
-  }
+  },
+  "exclude": ["ui", "dist", "test_embed.ts", "test_tracker.ts"]
 }

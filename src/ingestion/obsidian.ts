@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import chokidar from 'chokidar';
+import chokidar, { FSWatcher } from 'chokidar';
 
 export interface ObsidianNote {
   filePath: string;
@@ -12,7 +12,7 @@ export interface ObsidianNote {
 
 export class ObsidianVaultWatcher {
   private vaultPath: string;
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
 
   constructor(vaultPath: string) {
     this.vaultPath = vaultPath;
