@@ -34,7 +34,7 @@ async function retrieverNode(state: typeof GraphState.State) {
   // Embed the query and search LanceDB
   const queryVector = await embedder.generateEmbedding(state.query);
   console.log(`Embedded query into vector of length: ${queryVector.length}`);
-  const retrievedDocs = await vectorStore.search(queryVector, 5); // top 5
+  const retrievedDocs = await vectorStore.search(queryVector, { limit: 5 }); // top 5
   console.log(`Raw LanceDB search results length: ${retrievedDocs?.length}`);
   
   return { documents: retrievedDocs };

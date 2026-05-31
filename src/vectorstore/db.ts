@@ -65,7 +65,7 @@ export class VectorStore {
   /**
    * Performs a vector similarity search.
    */
-  public async search(queryVector: number[], limit: number = 5): Promise<DocumentChunk[]> {
+  public async search(queryVector: number[], options?: { sourceFilter?: 'obsidian' | 'zotero', limit?: number }): Promise<DocumentChunk[]> {
     if (!this.db) throw new Error("Database not initialized");
     
     const tableNames = await this.db.tableNames();
@@ -75,9 +75,16 @@ export class VectorStore {
       return []; // Table hasn't been created yet (no data)
     }
 
+    const limit = options?.limit || 5;
     const table = await this.db.openTable(this.tableName);
-    const results = await table.search(queryVector).limit(limit).toArray();
+    let query = table.search(queryVector).limit(limit);
     
+    if (options?.sourceFilter) {
+      // Use standard SQL string literal quotes for LanceDB
+      query = query.where(`source = '${options.sourceFilter}'`);
+    }
+
+    const results = await query.toArray();
     return results as unknown as DocumentChunk[];
   }
 }

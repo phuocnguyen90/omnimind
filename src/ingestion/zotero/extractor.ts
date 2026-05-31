@@ -1,0 +1,101 @@
+import fs from 'fs';
+import path from 'path';
+import pdfParse from 'pdf-parse';
+import { ZoteroDB } from './db';
+import { ZoteroOCR } from './ocr';
+import { ZoteroItem } from './types';
+import { SyncTracker } from '../tracker';
+import { JobQueue } from '../queue';
+
+export class ZoteroExtractor {
+  private zoteroDB: ZoteroDB;
+  private zoteroOCR: ZoteroOCR;
+  private storagePath: string;
+  private cacheDir: string;
+
+  constructor(dbPath: string, storagePath: string, lmClient: any, syncTracker: SyncTracker) {
+    this.zoteroDB = new ZoteroDB(dbPath, storagePath, syncTracker);
+    this.zoteroOCR = new ZoteroOCR(lmClient);
+    this.storagePath = storagePath;
+
+    const workspaceDir = path.join(require('os').homedir(), ".omnimind");
+    this.cacheDir = path.join(workspaceDir, "ocr_cache");
+    if (!fs.existsSync(this.cacheDir)) {
+      fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+  }
+
+  public async discoverJobs(jobQueue: JobQueue): Promise<void> {
+    return this.zoteroDB.discoverJobs(jobQueue);
+  }
+
+  public async getPaperInfo(queryStr: string): Promise<any[]> {
+    return this.zoteroDB.getPaperInfo(queryStr);
+  }
+
+  /**
+   * Execution Phase: Processes a single job and returns the text content.
+   */
+  public async executeJob(jobPayload: any): Promise<ZoteroItem> {
+    const key = jobPayload.storage_key as string;
+    const fileName = (jobPayload.file_name as string).replace('storage:', '');
+    const richTitle = jobPayload.rich_title || fileName;
+    
+    const storageDir = path.join(this.storagePath, key);
+    const pdfFilePath = path.join(storageDir, fileName);
+
+    let textContent: string | null = null;
+    const cacheFilePath = path.join(this.cacheDir, `${key}.md`);
+
+    // 1. Check if we have a full cache hit without OCR (fallback for pdf-parse)
+    if (fs.existsSync(cacheFilePath)) {
+      const cachedContent = fs.readFileSync(cacheFilePath, 'utf-8');
+      if (!cachedContent.includes("<!-- Page ")) {
+         console.log(`[Cache Hit] Skipping extraction for ${fileName}, reading pdf-parse from cache.`);
+         textContent = cachedContent;
+      }
+    }
+    
+    if (!textContent) {
+      // 2. Perform Extraction
+      if (!fs.existsSync(pdfFilePath)) {
+        throw new Error(`PDF not found: ${pdfFilePath}`);
+      }
+
+      try {
+        const dataBuffer = fs.readFileSync(pdfFilePath);
+        const pdfParseFn = (pdfParse as any).default || pdfParse;
+        
+        const originalWarn = console.warn;
+        console.warn = () => {};
+        const data = await pdfParseFn(dataBuffer);
+        console.warn = originalWarn;
+        
+        textContent = data.text;
+
+        // --- HYBRID OCR PIPELINE ---
+        if (this.zoteroOCR.needsOCR(textContent || "", data.numpages || 1)) {
+          // Pass the cache file path so it can stream progress and resume!
+          const visionMarkdown = await this.zoteroOCR.runVisionOCR(pdfFilePath, fileName, cacheFilePath);
+          if (visionMarkdown.trim().length > 0) {
+            textContent = visionMarkdown;
+          }
+        } else {
+          // Save standard PDF-Parse to cache so we never OCR this again
+          if (textContent && textContent.trim().length > 0) {
+            fs.writeFileSync(cacheFilePath, textContent);
+          }
+        }
+      } catch (err: any) {
+        throw new Error(`Failed to parse PDF at ${pdfFilePath}: ${err.message}`);
+      }
+    }
+
+    return {
+      key,
+      title: richTitle,
+      pdfPath: pdfFilePath,
+      textContent,
+    };
+  }
+}

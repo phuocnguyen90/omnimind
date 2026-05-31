@@ -8,7 +8,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { VectorStore } from "./vectorstore/db";
 import { EmbeddingPipeline } from "./ingestion/embedder";
 import { ObsidianVaultWatcher } from "./ingestion/obsidian";
-import { ZoteroExtractor } from "./ingestion/zotero";
+import { ZoteroExtractor } from "./ingestion/zotero/extractor";
 import { SyncTracker } from "./ingestion/tracker";
 import { JobQueue, Job } from "./ingestion/queue";
 import * as http from "http";
@@ -39,7 +39,6 @@ const searchGraphTool = tool({
       messages: [new HumanMessage(params.query)]
     });
 
-    // Remove the massive vector arrays before returning to the Chat LLM to save tokens and prevent context overflow!
     const contextDocs = (finalState.documents || []).map((doc: any) => ({
       path: doc.path,
       source: doc.source,
@@ -51,8 +50,93 @@ const searchGraphTool = tool({
   },
 });
 
+const getPaperInfoTool = tool({
+  name: "get_paper_info",
+  description: "Fetch exact metadata (Title, Authors, Year, DOI, Abstract, PDF path) for a specific Zotero paper using a title fragment, author, or DOI.",
+  parameters: {
+    query: z.string().describe("Title fragment, author's last name, or DOI to search in Zotero.")
+  },
+  implementation: async (params: any) => {
+    console.log(`[Tool] get_paper_info called with query: ${params.query}`);
+    if (!zoteroExtractor) return JSON.stringify({ error: "Zotero Extractor not initialized." });
+    const info = await zoteroExtractor.getPaperInfo(params.query);
+    return JSON.stringify(info);
+  }
+});
+
+const searchAcademicReferencesTool = tool({
+  name: "search_academic_references",
+  description: "Semantic vector search specifically restricted to Zotero academic papers.",
+  parameters: {
+    query: z.string().describe("The search query."),
+    limit: z.number().optional().describe("Number of results to return (default 5).")
+  },
+  implementation: async (params: any) => {
+    console.log(`[Tool] search_academic_references called with query: ${params.query}`);
+    const limit = params.limit || 5;
+    const queryVector = await embedder.generateEmbedding(params.query);
+    const results = await vectorStore.search(queryVector, { sourceFilter: 'zotero', limit });
+    return JSON.stringify(results.map(r => ({ path: r.path, text: r.text })));
+  }
+});
+
+const searchPersonalNotesTool = tool({
+  name: "search_personal_notes",
+  description: "Semantic vector search specifically restricted to local Obsidian personal notes.",
+  parameters: {
+    query: z.string().describe("The search query."),
+    limit: z.number().optional().describe("Number of results to return (default 5).")
+  },
+  implementation: async (params: any) => {
+    console.log(`[Tool] search_personal_notes called with query: ${params.query}`);
+    const limit = params.limit || 5;
+    const queryVector = await embedder.generateEmbedding(params.query);
+    const results = await vectorStore.search(queryVector, { sourceFilter: 'obsidian', limit });
+    return JSON.stringify(results.map(r => ({ path: r.path, text: r.text, links_to: r.links_to })));
+  }
+});
+
+const clusterPapersTool = tool({
+  name: "cluster_papers",
+  description: "Semantically cluster papers based on a broad topic or query to find common themes.",
+  parameters: {
+    query: z.string().describe("The broad topic to fetch papers for clustering."),
+    k: z.number().optional().describe("Number of clusters to generate (default 3).")
+  },
+  implementation: async (params: any) => {
+    console.log(`[Tool] cluster_papers called with query: ${params.query}, k: ${params.k}`);
+    const k = params.k || 3;
+    const queryVector = await embedder.generateEmbedding(params.query);
+    // Fetch top 50 results to cluster
+    const results = await vectorStore.search(queryVector, { sourceFilter: 'zotero', limit: 50 });
+    
+    if (results.length < k) {
+      return JSON.stringify({ error: `Not enough papers found (${results.length}) to form ${k} clusters.` });
+    }
+
+    // Dynamic import to avoid loading unless called
+    const { kmeans } = await import("./vectorstore/cluster");
+    
+    const vectors = results.map(r => r.vector);
+    const assignments = kmeans(vectors, k);
+    
+    const clusters: Record<number, any[]> = {};
+    for (let i = 0; i < k; i++) clusters[i] = [];
+    
+    for (let i = 0; i < results.length; i++) {
+      const clusterId = assignments[i];
+      clusters[clusterId].push({
+        path: results[i].path,
+        text: results[i].text.substring(0, 200) + "..." // Truncate text to avoid massive JSON
+      });
+    }
+
+    return JSON.stringify(clusters);
+  }
+});
+
 export const toolsProvider = {
-  tools: [searchGraphTool],
+  tools: [searchGraphTool, getPaperInfoTool, searchAcademicReferencesTool, searchPersonalNotesTool, clusterPapersTool],
 };
 
 // LM Studio plugin entry point
