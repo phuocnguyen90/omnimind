@@ -149,54 +149,87 @@ export class ZoteroExtractor {
     stmt.free();
     db.close();
 
-    // Parse each PDF
-    for (const row of rows) {
-      const fileName = (row.file_name as string).replace('storage:', '');
-      const storageDir = path.join(this.storagePath, row.storage_key as string);
-      const pdfFilePath = path.join(storageDir, fileName);
+    // Parse each PDF concurrently based on parameterized limit
+    const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS || "4", 10);
+    console.log(`[Zotero] Starting extraction with ${maxConcurrentWorkers} concurrent workers...`);
+    
+    let activeWorkers = 0;
+    let index = 0;
 
-      let textContent: string | null = null;
-      let pdfPathToStore: string | null = null;
-
-      if (fs.existsSync(pdfFilePath)) {
-        pdfPathToStore = pdfFilePath;
-        try {
-          const dataBuffer = fs.readFileSync(pdfFilePath);
-          const pdfParseFn = (pdfParse as any).default || pdfParse;
-          
-          // Suppress pdf-parse warnings to keep the terminal clean
-          const originalWarn = console.warn;
-          console.warn = () => {};
-          
-          const data = await pdfParseFn(dataBuffer);
-          
-          // Restore console.warn
-          console.warn = originalWarn;
-          
-          textContent = data.text;
-
-          // --- HYBRID OCR PIPELINE ---
-          if (this.needsOCR(textContent || "", data.numpages || 1)) {
-            const visionMarkdown = await this.runVisionOCR(pdfFilePath, fileName);
-            if (visionMarkdown.trim().length > 0) {
-              textContent = visionMarkdown;
-            }
-          }
-          // ---------------------------
-
-        } catch (err) {
-          console.error(`Failed to parse PDF at ${pdfFilePath}`, err);
+    await new Promise<void>((resolve, reject) => {
+      const next = () => {
+        if (index >= rows.length && activeWorkers === 0) {
+          resolve();
+          return;
         }
-      }
+        
+        while (activeWorkers < maxConcurrentWorkers && index < rows.length) {
+          const row = rows[index++];
+          activeWorkers++;
+          
+          this.processRow(row, onItemParsed)
+            .then(() => {
+              activeWorkers--;
+              next();
+            })
+            .catch((err) => {
+              console.error(`[Zotero] Worker failed on row ${row.file_name}`, err);
+              activeWorkers--;
+              next();
+            });
+        }
+      };
+      
+      next();
+    });
+  }
 
-      if (textContent) {
-        await onItemParsed({
-          key: row.storage_key as string,
-          title: fileName,
-          pdfPath: pdfPathToStore,
-          textContent,
-        });
+  private async processRow(row: any, onItemParsed: (item: ZoteroItem) => Promise<void>) {
+    const fileName = (row.file_name as string).replace('storage:', '');
+    const storageDir = path.join(this.storagePath, row.storage_key as string);
+    const pdfFilePath = path.join(storageDir, fileName);
+
+    let textContent: string | null = null;
+    let pdfPathToStore: string | null = null;
+
+    if (fs.existsSync(pdfFilePath)) {
+      pdfPathToStore = pdfFilePath;
+      try {
+        const dataBuffer = fs.readFileSync(pdfFilePath);
+        const pdfParseFn = (pdfParse as any).default || pdfParse;
+        
+        // Suppress pdf-parse warnings to keep the terminal clean
+        const originalWarn = console.warn;
+        console.warn = () => {};
+        
+        const data = await pdfParseFn(dataBuffer);
+        
+        // Restore console.warn
+        console.warn = originalWarn;
+        
+        textContent = data.text;
+
+        // --- HYBRID OCR PIPELINE ---
+        if (this.needsOCR(textContent || "", data.numpages || 1)) {
+          const visionMarkdown = await this.runVisionOCR(pdfFilePath, fileName);
+          if (visionMarkdown.trim().length > 0) {
+            textContent = visionMarkdown;
+          }
+        }
+        // ---------------------------
+
+      } catch (err) {
+        console.error(`Failed to parse PDF at ${pdfFilePath}`, err);
       }
+    }
+
+    if (textContent) {
+      await onItemParsed({
+        key: row.storage_key as string,
+        title: fileName,
+        pdfPath: pdfPathToStore,
+        textContent,
+      });
     }
   }
 }
