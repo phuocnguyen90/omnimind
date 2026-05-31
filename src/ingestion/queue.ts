@@ -77,6 +77,16 @@ export class JobQueue extends EventEmitter {
     return { total: this.jobs.size, pending, processing, completed, failed };
   }
 
+  public getFailedJobs(): Job[] {
+    const failed: Job[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status === 'failed') {
+        failed.push(job);
+      }
+    }
+    return failed;
+  }
+
   public pause() {
     this.state = 'PAUSED';
     this.queue.pause();

@@ -27,18 +27,24 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch Knowledge Data
+  // Fetch Knowledge Data (Poll every 2s)
   useEffect(() => {
     if (activeTab === 'knowledge') {
-      fetch('/api/knowledge/stats')
-        .then(res => res.json())
-        .then(setKnowledgeStats)
-        .catch(console.error);
-        
-      fetch('/api/knowledge/sources')
-        .then(res => res.json())
-        .then(setSources)
-        .catch(console.error);
+      const fetchData = () => {
+        fetch('/api/knowledge/stats')
+          .then(res => res.json())
+          .then(setKnowledgeStats)
+          .catch(console.error);
+          
+        fetch('/api/knowledge/sources')
+          .then(res => res.json())
+          .then(setSources)
+          .catch(console.error);
+      };
+      
+      fetchData(); // Initial fetch
+      const interval = setInterval(fetchData, 2000);
+      return () => clearInterval(interval);
     }
   }, [activeTab]);
 

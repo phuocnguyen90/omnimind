@@ -3,6 +3,8 @@ import path from 'path';
 import pdfParse from 'pdf-parse';
 import { ZoteroDB } from './db';
 import { ZoteroOCR } from './ocr';
+import { parseHTML } from "./parsers/htmlParser";
+import { parseEPUB } from "./parsers/epubParser";
 import { ZoteroItem } from './types';
 import { SyncTracker } from '../tracker';
 import { JobQueue } from '../queue';
@@ -61,13 +63,23 @@ export class ZoteroExtractor {
     if (!textContent) {
       // 2. Perform Extraction
       if (!fs.existsSync(pdfFilePath)) {
-        throw new Error(`PDF not found: ${pdfFilePath}`);
+        throw new Error(`File not found: ${pdfFilePath}`);
       }
+      
+      const ext = path.extname(fileName).toLowerCase();
 
       try {
-        // Stage 1: Fast path using LM Studio's native document parser
-        try {
-          if (this.lmClient && this.lmClient.files) {
+        if (ext === '.html' || ext === '.htm') {
+          textContent = await parseHTML(pdfFilePath);
+          if (textContent) fs.writeFileSync(cacheFilePath, textContent);
+        } else if (ext === '.epub') {
+          textContent = await parseEPUB(pdfFilePath);
+          if (textContent) fs.writeFileSync(cacheFilePath, textContent);
+        } else {
+          // Default to PDF parsing logic
+          // Stage 1: Fast path using LM Studio's native document parser
+          try {
+            if (this.lmClient && this.lmClient.files) {
             const fileHandle = await this.lmClient.files.prepareFile(pdfFilePath);
             const parseResult = await this.lmClient.files.parseDocument(fileHandle);
             const text = parseResult.content;
@@ -105,8 +117,9 @@ export class ZoteroExtractor {
             if (textContent && textContent.trim().length > 0) {
               fs.writeFileSync(cacheFilePath, textContent);
             }
+            }
           }
-        }
+        } // End of PDF parsing logic
       } catch (err: any) {
         throw new Error(`Failed to parse PDF at ${pdfFilePath}: ${err.message}`);
       }

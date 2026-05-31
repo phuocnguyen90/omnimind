@@ -34,7 +34,7 @@ export class ObsidianVaultWatcher {
     this.watcher = chokidar.watch(this.vaultPath, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
-      ignoreInitial: true, // we already did the massive first run, don't re-run on restart
+      ignoreInitial: false, // Must be false to discover all existing notes on startup. Deduplication is handled by syncTracker.
     });
 
     this.watcher

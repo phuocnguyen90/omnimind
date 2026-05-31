@@ -65,7 +65,8 @@ export class ZoteroDB {
       JOIN (
           SELECT parentItemID, MIN(itemID) AS itemID, path
           FROM itemAttachments
-          WHERE contentType = 'application/pdf' AND path LIKE 'storage:%.pdf'
+          WHERE contentType IN ('application/pdf', 'application/epub+zip', 'text/html') 
+            AND path LIKE 'storage:%'
           GROUP BY parentItemID
       ) att ON att.parentItemID = i.itemID
       JOIN items atti ON atti.itemID = att.itemID
