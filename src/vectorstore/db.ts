@@ -51,12 +51,14 @@ export class VectorStore {
     if (!this.db) throw new Error("Database not initialized");
     
     const tableNames = await this.db.tableNames();
+    console.log(`LanceDB tables found: ${tableNames.join(", ")}`);
     if (!tableNames.includes(this.tableName)) {
+      console.warn(`Table ${this.tableName} not found!`);
       return []; // Table hasn't been created yet (no data)
     }
 
     const table = await this.db.openTable(this.tableName);
-    const results = await table.search(queryVector).limit(limit).execute();
+    const results = await table.search(queryVector).limit(limit).toArray();
     
     return results as unknown as DocumentChunk[];
   }

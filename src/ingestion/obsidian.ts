@@ -24,29 +24,30 @@ export class ObsidianVaultWatcher {
    * @param onNoteRemoved Callback fired when a note is deleted
    */
   public watch(
-    onNoteChanged: (note: ObsidianNote) => Promise<void>,
+    onNoteChanged: (filePath: string) => Promise<void>,
     onNoteRemoved: (filePath: string) => Promise<void>
   ) {
     if (!fs.existsSync(this.vaultPath)) {
       throw new Error(`Vault path does not exist: ${this.vaultPath}`);
     }
 
-    this.watcher = chokidar.watch(path.join(this.vaultPath, '**/*.md'), {
+    this.watcher = chokidar.watch(this.vaultPath, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
-      ignoreInitial: false, // ensure we process all existing files on startup
+      ignoreInitial: true, // we already did the massive first run, don't re-run on restart
     });
 
     this.watcher
       .on('add', async (filePath: string) => {
-        const note = this.parseNote(filePath);
-        if (note) await onNoteChanged(note);
+        if (!filePath.endsWith('.md')) return;
+        await onNoteChanged(filePath);
       })
       .on('change', async (filePath: string) => {
-        const note = this.parseNote(filePath);
-        if (note) await onNoteChanged(note);
+        if (!filePath.endsWith('.md')) return;
+        await onNoteChanged(filePath);
       })
       .on('unlink', async (filePath: string) => {
+        if (!filePath.endsWith('.md')) return;
         await onNoteRemoved(filePath);
       });
       
@@ -60,7 +61,7 @@ export class ObsidianVaultWatcher {
     }
   }
 
-  private parseNote(filePath: string): ObsidianNote | null {
+  public parseNote(filePath: string): ObsidianNote | null {
     try {
       const rawContent = fs.readFileSync(filePath, 'utf-8');
       const title = path.basename(filePath, '.md');

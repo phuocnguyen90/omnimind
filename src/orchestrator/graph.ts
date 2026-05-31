@@ -1,6 +1,7 @@
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
-import { BaseMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { DocumentChunk } from "../vectorstore/db";
+import { vectorStore, embedder, lmClient } from "../index";
 
 // Define the Graph State
 export const GraphState = Annotation.Root({
@@ -24,9 +25,19 @@ async function queryRewriterNode(state: typeof GraphState.State) {
 
 async function retrieverNode(state: typeof GraphState.State) {
   console.log(`--- RETRIEVING DOCUMENTS FOR: ${state.query} ---`);
-  // Here we will call VectorStore.search() using an embedding of state.query
-  const mockDocs: DocumentChunk[] = []; 
-  return { documents: mockDocs };
+  
+  if (!vectorStore || !embedder) {
+    console.error("VectorStore or Embedder not initialized!");
+    return { documents: [] };
+  }
+  
+  // Embed the query and search LanceDB
+  const queryVector = await embedder.generateEmbedding(state.query);
+  console.log(`Embedded query into vector of length: ${queryVector.length}`);
+  const retrievedDocs = await vectorStore.search(queryVector, 5); // top 5
+  console.log(`Raw LanceDB search results length: ${retrievedDocs?.length}`);
+  
+  return { documents: retrievedDocs };
 }
 
 async function graderNode(state: typeof GraphState.State) {
@@ -38,10 +49,24 @@ async function graderNode(state: typeof GraphState.State) {
 
 async function synthesizerNode(state: typeof GraphState.State) {
   console.log("--- SYNTHESIZING RESPONSE ---");
-  // Call LLM to generate the final Markdown response or Obsidian note
-  // using state.documents and state.query
+  
+  if (!lmClient) {
+    return { messages: [new AIMessage("LM Studio Client not available.")] };
+  }
+
+  const docs = (Array.isArray(state.documents) ? state.documents : Array.from(state.documents || [])) as DocumentChunk[];
+  console.log("Documents retrieved:", docs.length);
+
+  // Format documents into context
+  const context = docs.map((doc, idx) => `[Source ${idx + 1} - ${doc.path}]:\n${doc.text}`).join('\n\n');
+  
+  // DEADLOCK PREVENTION: 
+  // When LM Studio Chat invokes this tool, it locks the Chat LLM.
+  // If we try to call lmClient.llm.model().respond() here, we will cause a "Model is busy" deadlock!
+  // Instead, this node should just prepare the documents, and we let the LM Studio Chat LLM synthesize the final response natively!
+  
   return { 
-    messages: [/* new AIMessage("Final response") */] 
+    messages: [new AIMessage(`I have retrieved the following context. Please synthesize an answer for the user:\n\n${context}`)] 
   };
 }
 
