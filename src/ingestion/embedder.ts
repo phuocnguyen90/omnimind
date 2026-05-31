@@ -5,6 +5,7 @@ import crypto from "crypto";
 export class EmbeddingPipeline {
   private client: any; // Using any to bypass strict type for now, it's LMStudioClient
   private embedModelIdentifier: string | undefined;
+  private cachedModel: any = null;
 
   constructor(client: any, modelIdentifier?: string) {
     this.client = client;
@@ -13,7 +14,7 @@ export class EmbeddingPipeline {
 
   /**
    * Generates an embedding for a single text chunk.
-   * If modelIdentifier is not specified, LM Studio will use any loaded embedding model.
+   * Caches the model instance to prevent spamming LM Studio's getModelInfo endpoint.
    */
   public async generateEmbedding(text: string): Promise<number[]> {
     try {
@@ -21,14 +22,20 @@ export class EmbeddingPipeline {
         throw new Error("LM Studio client not fully initialized.");
       }
       
-      const model = this.embedModelIdentifier 
-        ? await this.client.embedding.model(this.embedModelIdentifier)
-        : await this.client.embedding.model();
+      if (!this.cachedModel) {
+        this.cachedModel = this.embedModelIdentifier 
+          ? await this.client.embedding.model(this.embedModelIdentifier)
+          : await this.client.embedding.model();
+      }
         
-      const embeddingResult = await (model as any).embed(text);
-      
-      // LM Studio SDK typically returns an object containing the embedding vector
-      return embeddingResult.embedding; 
+      try {
+        const embeddingResult = await (this.cachedModel as any).embed(text);
+        return embeddingResult.embedding; 
+      } catch (err) {
+        // If it fails (e.g., model unloaded), clear cache and re-throw so it fetches again next time
+        this.cachedModel = null;
+        throw err;
+      }
     } catch (e: any) {
       if (e.message?.includes("No model found")) {
         throw new Error("No embedding model is currently loaded in LM Studio! Please load an embedding model alongside your chat model (ensure 'Keep multiple models in memory' is enabled) and try again.");
@@ -69,45 +76,69 @@ export class EmbeddingPipeline {
   }
 
   /**
-   * Takes a raw Obsidian note or Zotero PDF text, chunks it, embeds it,
+   * Takes a raw Obsidian note or Zotero PDF text, chunks it, embeds it in batches,
    * and returns an array of DocumentChunks ready for LanceDB.
    */
   public async processDocument(
     source: 'obsidian' | 'zotero',
     path: string,
+    title: string,
     rawText: string,
     links: string[] = [],
     onBatch: (chunks: DocumentChunk[]) => Promise<void>
   ): Promise<number> {
-    const textChunks = this.chunkText(rawText);
+    // Prepend the title to every chunk. This drastically improves both semantic search 
+    // relevance and gives the LLM context of where the text came from!
+    const textChunks = this.chunkText(rawText).map(chunk => `Source: ${title}\n\n${chunk}`);
     const linksString = links.join(",");
-    let batch: DocumentChunk[] = [];
     let totalProcessed = 0;
 
-    for (let i = 0; i < textChunks.length; i++) {
-      const text = textChunks[i];
-      const vector = await this.generateEmbedding(text);
+    if (!this.client || !this.client.embedding) {
+      throw new Error("LM Studio client not fully initialized.");
+    }
+
+    if (!this.cachedModel) {
+      this.cachedModel = this.embedModelIdentifier 
+        ? await this.client.embedding.model(this.embedModelIdentifier)
+        : await this.client.embedding.model();
+    }
+
+    // Process in batches of 20 to prevent overwhelming LM Studio API
+    const BATCH_SIZE = 20;
+    
+    for (let i = 0; i < textChunks.length; i += BATCH_SIZE) {
+      const chunkBatch = textChunks.slice(i, i + BATCH_SIZE);
       
-      // Generate a deterministic ID based on the source path and chunk index
-      const id = crypto.createHash('sha256').update(`${source}:${path}:${i}`).digest('hex');
-
-      batch.push({
-        id,
-        vector,
-        source,
-        path,
-        text,
-        links_to: linksString
-      });
-
-      // Flush batch every 20 chunks to prevent memory bloat on giant files
-      if (batch.length >= 20 || i === textChunks.length - 1) {
-        if (batch.length > 0) {
-          await onBatch(batch);
-          totalProcessed += batch.length;
-          batch = []; // Clear array for garbage collection
-        }
+      let embeddingResults;
+      try {
+        embeddingResults = await (this.cachedModel as any).embed(chunkBatch);
+      } catch (err) {
+        this.cachedModel = null;
+        throw err;
       }
+
+      const lancedbBatch: DocumentChunk[] = [];
+      
+      for (let j = 0; j < chunkBatch.length; j++) {
+        const text = chunkBatch[j];
+        // In array embed, LM Studio SDK returns an array of objects
+        const vector = embeddingResults[j].embedding;
+        
+        // Generate deterministic ID
+        const id = crypto.createHash('sha256').update(`${source}:${path}:${i + j}`).digest('hex');
+
+        lancedbBatch.push({
+          id,
+          vector,
+          source,
+          path,
+          text,
+          links_to: linksString
+        });
+      }
+
+      await onBatch(lancedbBatch);
+      totalProcessed += lancedbBatch.length;
     }
 
     return totalProcessed;

@@ -87,7 +87,7 @@ export async function main(context: any) {
             
             if (item.textContent) {
               await vectorStore.deleteByPath(item.key); // deduplicate
-              await embedder.processDocument("zotero", item.key, item.textContent, [], async (batch) => {
+              await embedder.processDocument("zotero", item.key, item.title, item.textContent, [], async (batch: any[]) => {
                 await vectorStore.upsertChunks(batch);
               });
               syncTracker.markZoteroComplete(item.key);
@@ -98,7 +98,7 @@ export async function main(context: any) {
             const note = obsidianWatcher.parseNote(job.id);
             if (note) {
               await vectorStore.deleteByPath(note.filePath);
-              await embedder.processDocument("obsidian", note.filePath, note.content, note.links, async (batch) => {
+              await embedder.processDocument("obsidian", note.filePath, note.title, note.content, note.links, async (batch: any[]) => {
                 await vectorStore.upsertChunks(batch);
               });
               syncTracker.markObsidianComplete(job.id, job.payload.mtimeMs);
@@ -127,6 +127,10 @@ export async function main(context: any) {
       zoteroExtractor.discoverJobs(jobQueue).catch(err => console.error("Zotero Discovery Failed:", err));
 
       // 5. Start HTTP Control Server
+      if ((global as any).controlServer) {
+        try { (global as any).controlServer.close(); } catch (e) {}
+      }
+      
       const server = http.createServer((req, res) => {
         if (req.method === 'GET' && req.url === '/') {
           const stats = jobQueue.getStats();
@@ -197,9 +201,19 @@ export async function main(context: any) {
           res.writeHead(404); res.end();
         }
       });
+
+      server.on('error', (e: any) => {
+        if (e.code === 'EADDRINUSE') {
+          console.warn("[Control Server] Port 4733 is in use, assuming server is already running.");
+        } else {
+          console.error("[Control Server] Server error:", e);
+        }
+      });
+
       server.listen(4733, () => {
         console.log("OmniMind Control Panel running at http://localhost:4733");
       });
+      (global as any).controlServer = server;
 
       // 6. Watch Obsidian Vault
       obsidianWatcher.watch(

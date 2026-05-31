@@ -176,6 +176,7 @@ export class ZoteroExtractor {
 
   /**
    * Fast discovery phase: Scans the SQLite DB and populates the JobQueue with pending PDFs.
+   * Extracts rich metadata (Authors, Year, Title) to perfectly ground LLM embeddings.
    */
   public async discoverJobs(jobQueue: JobQueue): Promise<void> {
     if (!fs.existsSync(this.dbPath)) {
@@ -186,14 +187,50 @@ export class ZoteroExtractor {
     const filebuffer = fs.readFileSync(this.dbPath);
     const db = new SQL.Database(filebuffer);
 
+    // 1. Resolve Zotero dynamic field IDs
+    const fieldQuery = `SELECT fieldName, fieldID FROM fields WHERE fieldName IN ('title','date')`;
+    const fStmt = db.prepare(fieldQuery);
+    const fids: Record<string, number> = {};
+    while (fStmt.step()) {
+      const row = fStmt.getAsObject();
+      fids[row.fieldName as string] = row.fieldID as number;
+    }
+    fStmt.free();
+
+    const authorQuery = `SELECT creatorTypeID FROM creatorTypes WHERE creatorType = 'author'`;
+    const aStmt = db.prepare(authorQuery);
+    let authorTypeId = 1;
+    if (aStmt.step()) {
+      authorTypeId = aStmt.getAsObject().creatorTypeID as number;
+    }
+    aStmt.free();
+
+    // 2. Extract PDF attachments along with Parent Metadata
     const query = `
-      SELECT 
-        items.key AS storage_key, 
-        itemAttachments.path AS file_name,
-        items.itemID
-      FROM itemAttachments 
-      JOIN items ON itemAttachments.itemID = items.itemID
-      WHERE itemAttachments.path LIKE 'storage:%.pdf'
+      SELECT
+          i.key AS item_key,
+          tv.value  AS title,
+          GROUP_CONCAT(c.lastName || ', ' || c.firstName, '; ') AS authors,
+          dv.value  AS year,
+          att.path  AS file_name,
+          atti.key  AS storage_key
+      FROM items i
+      LEFT JOIN itemData    td   ON td.itemID   = i.itemID AND td.fieldID   = ${fids['title'] || -1}
+      LEFT JOIN itemDataValues tv ON tv.valueID = td.valueID
+      LEFT JOIN itemData    dd   ON dd.itemID   = i.itemID AND dd.fieldID   = ${fids['date'] || -1}
+      LEFT JOIN itemDataValues dv ON dv.valueID = dd.valueID
+      LEFT JOIN itemCreators ic ON ic.itemID = i.itemID AND ic.creatorTypeID = ${authorTypeId}
+      LEFT JOIN creators c ON c.creatorID = ic.creatorID
+      JOIN (
+          SELECT parentItemID, MIN(itemID) AS itemID, path
+          FROM itemAttachments
+          WHERE contentType = 'application/pdf' AND path LIKE 'storage:%.pdf'
+          GROUP BY parentItemID
+      ) att ON att.parentItemID = i.itemID
+      JOIN items atti ON atti.itemID = att.itemID
+      WHERE i.itemTypeID NOT IN (14, 26)
+        AND tv.value IS NOT NULL
+      GROUP BY i.itemID
     `;
 
     const stmt = db.prepare(query);
@@ -202,12 +239,30 @@ export class ZoteroExtractor {
       const key = row.storage_key as string;
       const fileName = (row.file_name as string).replace('storage:', '');
       
+      // Format the Title as a BibTeX-style citation string
+      let richTitle = fileName;
+      if (row.title) {
+        const yearMatch = row.year ? String(row.year).substring(0,4) : "n.d.";
+        let authorStr = "Unknown";
+        if (row.authors) {
+           const authorsList = String(row.authors).split(';');
+           if (authorsList.length === 1) {
+             authorStr = authorsList[0].split(',')[0].trim();
+           } else if (authorsList.length === 2) {
+             authorStr = `${authorsList[0].split(',')[0].trim()} & ${authorsList[1].split(',')[0].trim()}`;
+           } else {
+             authorStr = `${authorsList[0].split(',')[0].trim()} et al.`;
+           }
+        }
+        richTitle = `${authorStr} (${yearMatch}) - ${row.title}`;
+      }
+
       if (!this.syncTracker.hasZotero(key)) {
         jobQueue.addJob({
           id: key,
           type: 'zotero',
-          title: fileName,
-          payload: row
+          title: richTitle,
+          payload: { ...row, rich_title: richTitle }
         });
       }
     }
@@ -223,6 +278,8 @@ export class ZoteroExtractor {
   public async executeJob(jobPayload: any): Promise<ZoteroItem> {
     const key = jobPayload.storage_key as string;
     const fileName = (jobPayload.file_name as string).replace('storage:', '');
+    const richTitle = jobPayload.rich_title || fileName;
+    
     const storageDir = path.join(this.storagePath, key);
     const pdfFilePath = path.join(storageDir, fileName);
 
@@ -277,7 +334,7 @@ export class ZoteroExtractor {
 
     return {
       key,
-      title: fileName,
+      title: richTitle,
       pdfPath: pdfFilePath,
       textContent,
     };
