@@ -45,13 +45,8 @@ To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 w
    ```
 
 #### 🛠️ For Developers
-If you want to modify the plugin from source:
-```bash
-git clone https://github.com/phuocnguyen90/omnimind.git
-cd omnimind
-npm install
-npm run build
-```
+Want to modify the plugin from source, or build it yourself? 
+Please see our [DEVELOPING.md](DEVELOPING.md) guide for instructions on setting up your local environment and running tests!
 
 ### Configuration
 
@@ -64,17 +59,10 @@ ZOTERO_STORAGE_PATH="C:\Path\To\Your\Zotero\storage"
 MAX_CONCURRENT_WORKERS=4
 ```
 
-### Running the Plugin
-
-Start the plugin server:
-
-```bash
-lms dev
-```
-
 1. Open LM Studio.
-2. The OmniMind plugin will automatically register as a tool.
-3. Open a chat, and the ingestion engine will kick off automatically, parsing your Zotero and Obsidian vaults in the background.
+2. In the Plugins or Developer section, use the LM Studio CLI or UI to load the extracted `omnimind-plugin` folder.
+3. The OmniMind plugin will automatically register as a tool.
+4. Open a chat, and the ingestion engine will kick off automatically, parsing your Zotero and Obsidian vaults in the background!
 
 ---
 
@@ -91,13 +79,6 @@ The Control Panel provides a real-time dashboard to:
 
 ---
 
-## 🛠️ Tech Stack
-
-*   **Backend**: Node.js, TypeScript, `@lmstudio/sdk`
-*   **Frontend**: React, Vite, CSS (No-Tailwind)
-*   **Vector Database**: LanceDB
-*   **PDF Processing**: `mupdf`
-*   **Orchestration**: LangGraph
 
 ## 📝 License
 
