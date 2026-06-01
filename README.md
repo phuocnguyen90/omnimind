@@ -49,9 +49,9 @@ To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 w
 ### Installation
 
 #### 📦 For Users (Recommended)
-1. Download the latest `omnimind-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phuocnguyen90/omnimind/releases) page.
-2. Extract the folder anywhere on your machine.
-3. **No further setup required!** LM Studio will automatically handle fetching any backend requirements (like LanceDB) for your specific operating system the moment you load the plugin.
+1. Visit **[https://lmstudio.ai/phuocnguyen90/omnimind](https://lmstudio.ai/phuocnguyen90/omnimind)**
+2. Click **Run in LM Studio** to instantly install and load this plugin.
+3. **No further setup required!** LM Studio will automatically handle fetching any backend requirements (like LanceDB) for your specific operating system.
 
 #### 🛠️ For Developers
 Want to modify the plugin from source, or build it yourself? 
@@ -59,14 +59,15 @@ Please see our [DEVELOPING.md](DEVELOPING.md) guide for instructions on setting 
 
 ### Configuration
 
-Ensure the following paths match your system setup in your `.env` or system environment variables:
+You can easily configure OmniMind directly inside the LM Studio Plugin UI. There is no need to manually edit `.env` files!
 
-```env
-OBSIDIAN_VAULT_PATH="C:\Path\To\Your\Obsidian\Vault"
-ZOTERO_DB_PATH="C:\Path\To\Your\Zotero\zotero.sqlite"
-ZOTERO_STORAGE_PATH="C:\Path\To\Your\Zotero\storage"
-MAX_CONCURRENT_WORKERS=4
-```
+![LM Studio Plugin Settings](docs/assets/settings.png)
+
+Ensure the following paths are set correctly for your system:
+- **OBSIDIAN_VAULT_PATH**: e.g., `C:\Path\To\Your\Obsidian\Vault`
+- **ZOTERO_DB_PATH**: e.g., `C:\Path\To\Your\Zotero\zotero.sqlite`
+- **ZOTERO_STORAGE_PATH**: e.g., `C:\Path\To\Your\Zotero\storage`
+- **MAX_CONCURRENT_WORKERS**: `4` (Recommended)
 
 ### Loading into LM Studio
 
