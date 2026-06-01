@@ -4,7 +4,7 @@ esbuild.build({
   entryPoints: ['src/index.ts'],
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   outfile: 'dist/index.js',
   // Make sure to externalize native modules so they aren't bundled into the JS
   // and can be resolved at runtime (assuming LM Studio provides them or they are deployed correctly).

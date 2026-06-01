@@ -3,7 +3,7 @@
     "strict": true,
     "module": "CommonJS",
     "moduleResolution": "node",
-    "target": "ES2022",
+    "target": "ES2023",
     "declaration": true,
     "noImplicitOverride": true,
     "sourceMap": true,
