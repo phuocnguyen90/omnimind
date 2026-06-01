@@ -1,8 +1,20 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-## [0.3.0] - 2026-06-01
+## [0.4.0] - 2026-06-01
 
+### 🚀 Features
+- **Advanced Search Algorithms**: Introduced robust support for MMR (Maximal Marginal Relevance) and BM25 search options inside `search_knowledge_graph`.
+- **Search Parameter Override**: The `search_knowledge_graph` tool now accepts an explicit `algorithm` parameter (`vector`, `bm25`, `hybrid`, `mmr`) allowing agents to dynamically pick the best algorithm for exact keyword/author matching vs conceptual search.
+- **Dynamic FTS Indexing**: LanceDB FTS index is now created automatically on-the-fly if missing when `bm25` or `hybrid` searches are performed.
+- **Advanced Search UI Settings**: A new Search Settings tab inside the Vite Control Panel allows users to set default `searchAlgorithm` and `mmrDiversity` preferences globally, communicating with a newly implemented `POST /api/config` backend endpoint.
+
+### 🐛 Bug Fixes
+- **LanceDB Apache Arrow Compatibility**: Converted raw Apache Arrow Vectors into native JavaScript arrays before performing MMR and K-Means cosine similarity calculations. Fixes fatal `NaN` distance ranking crash causing "Cannot read properties of undefined (reading 'vector')" errors.
+- **Control Panel CSS**: Fixed a CSS styling issue where dropdown text within the Search Settings menu was rendering invisibly (white text on white background).
+- **Documentation Overhaul**: Updated `README.md` and `DEVELOPING.md` to properly separate end-user benefits from developer architecture, and added a critical section regarding "Best Practices & Local Model Quirks" (pronoun binding, helpfulness bias/hallucinations, and tiny model rigidness).
+
+## [0.3.0] - 2026-06-01
 ### 🚀 Features
 - **Native Configuration UI**: Completely migrated away from `.env` files to LM Studio's native `createConfigSchematics()`. End users can now visually configure their Obsidian vault and Zotero database paths natively inside the LM Studio plugin settings menu!
 - **Native Orchestration**: Removed `LangGraph` and migrated the plugin to utilize the LM Studio `.act()` multi-round native orchestration loop.

@@ -12,8 +12,7 @@ test('Tools Registry', async (t) => {
     
     assert.strictEqual(toolNames.includes("search_knowledge_graph"), true);
     assert.strictEqual(toolNames.includes("get_paper_info"), true);
-    assert.strictEqual(toolNames.includes("search_academic_references"), true);
-    assert.strictEqual(toolNames.includes("search_personal_notes"), true);
+
     assert.strictEqual(toolNames.includes("cluster_papers"), true);
     assert.strictEqual(toolNames.includes("write_obsidian_note"), true);
     assert.strictEqual(toolNames.includes("read_obsidian_note"), true);

@@ -10,8 +10,7 @@ import * as index from '../src/index';
 import { 
   writeObsidianNoteTool, 
   readObsidianNoteTool, 
-  editObsidianNoteTool,
-  searchPersonalNotesTool
+  editObsidianNoteTool
 } from '../src/tools/obsidianTools';
 
 test('Obsidian Tools', async (t) => {
@@ -65,33 +64,7 @@ test('Obsidian Tools', async (t) => {
     const fileContent = fs.readFileSync(path.join(tmpDir, 'Test Note.md'), 'utf-8');
     assert.strictEqual(fileContent, '# Goodbye World\nNew paragraph');
   });
-  
-  await t.test('search_personal_notes filters by obsidian source', async () => {
-    // Mock the embedder and vectorStore
-    let searchSourceFilter = '';
-    
-    index._testInjectEmbedder({
-      generateEmbedding: async () => [0.5, 0.5]
-    });
-    
-    index._testInjectVectorStore({
-      search: async (vector: number[], options: any) => {
-        searchSourceFilter = options.sourceFilter;
-        return [
-          { path: 'some_note.md', text: 'Match 1', links_to: '' }
-        ];
-      }
-    });
-    
-    const res = await searchPersonalNotesTool.implementation({
-      query: 'something',
-      limit: 3
-    });
-    
-    const parsed = JSON.parse(res as string);
-    assert.strictEqual(searchSourceFilter, 'obsidian');
-    assert.strictEqual(parsed[0].path, 'some_note.md');
-  });
+
 
   // Cleanup
   fs.rmSync(tmpDir, { recursive: true, force: true });

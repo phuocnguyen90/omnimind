@@ -1,6 +1,7 @@
 import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { JobQueue } from "../ingestion/queue";
 import { VectorStore } from "../vectorstore/db";
 
@@ -46,6 +47,30 @@ export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore)
           const chunks = await vectorStore.getChunksByPath(targetPath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(chunks));
+        } else if (req.method === 'GET' && req.url === '/api/config') {
+          const configPath = path.join(os.homedir(), '.omnimind', 'search_config.json');
+          if (fs.existsSync(configPath)) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(fs.readFileSync(configPath, 'utf-8'));
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ algorithm: 'vector', mmrDiversity: 0.5 }));
+          }
+        } else if (req.method === 'POST' && req.url === '/api/config') {
+          let body = '';
+          req.on('data', chunk => body += chunk.toString());
+          req.on('end', () => {
+            try {
+              const config = JSON.parse(body);
+              const configPath = path.join(os.homedir(), '.omnimind', 'search_config.json');
+              fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+              res.writeHead(400); res.end('Invalid JSON');
+            }
+          });
+          return; // Wait for async end
         } else {
           res.writeHead(404); res.end();
         }

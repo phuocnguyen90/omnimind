@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Database, FileText, BookOpen } from 'lucide-react';
+import { Play, Pause, RotateCcw, Database, FileText, BookOpen, Settings } from 'lucide-react';
 import './index.css';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'queue' | 'knowledge'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'knowledge' | 'settings'>('queue');
   
   // Queue State
   const [status, setStatus] = useState({ state: 'LOADING', stats: { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 } });
@@ -13,6 +13,34 @@ function App() {
   const [sources, setSources] = useState<any[]>([]);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [chunks, setChunks] = useState<any[]>([]);
+  
+  // Settings State
+  const [searchConfig, setSearchConfig] = useState({ algorithm: 'vector', mmrDiversity: 0.5 });
+  const [saveStatus, setSaveStatus] = useState('');
+
+  // Load Settings
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(setSearchConfig)
+      .catch(console.error);
+  }, []);
+
+  const saveSettings = async (newConfig: any) => {
+    setSearchConfig(newConfig);
+    setSaveStatus('Saving...');
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+      setSaveStatus('Saved!');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (e) {
+      setSaveStatus('Error saving');
+    }
+  };
 
   // Polling for Queue Status
   useEffect(() => {
@@ -86,6 +114,12 @@ function App() {
           onClick={() => setActiveTab('knowledge')}
         >
           Knowledge Base Browser
+        </button>
+        <button 
+          className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          Search Settings
         </button>
       </div>
 
@@ -203,6 +237,64 @@ function App() {
             </div>
           </div>
         </>
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="glass-panel" style={{ padding: '30px', maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+            <Settings size={24} style={{ marginRight: '10px' }} />
+            <h2 style={{ margin: 0 }}>Advanced Search Algorithm</h2>
+          </div>
+          
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '30px', lineHeight: '1.6' }}>
+            Configure how the LLM Agent retrieves documents from LanceDB. These settings are applied dynamically in real-time.
+          </p>
+
+          <div style={{ marginBottom: '30px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '10px' }}>Search Engine Backend</label>
+            <select 
+              value={searchConfig.algorithm}
+              onChange={(e) => saveSettings({ ...searchConfig, algorithm: e.target.value })}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
+            >
+              <option value="vector" style={{ background: '#1e1e2e', color: 'white' }}>Standard Vector Similarity (Default)</option>
+              <option value="bm25" style={{ background: '#1e1e2e', color: 'white' }}>BM25 Full-Text Keyword Search (Tantivy)</option>
+              <option value="hybrid" style={{ background: '#1e1e2e', color: 'white' }}>Hybrid Search (Vector + BM25 with Reciprocal Rank Fusion)</option>
+              <option value="mmr" style={{ background: '#1e1e2e', color: 'white' }}>Maximal Marginal Relevance (Vector with Diversity Penalty)</option>
+            </select>
+            
+            <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '0.9em', color: 'var(--text-secondary)' }}>
+              {searchConfig.algorithm === 'vector' && "Uses standard Cosine Similarity. Best for conceptual understanding."}
+              {searchConfig.algorithm === 'bm25' && "Uses exact keyword matching. Best for finding specific names, IDs, or exact phrases."}
+              {searchConfig.algorithm === 'hybrid' && "Queries both Vector and BM25 simultaneously, merging the results for the highest accuracy."}
+              {searchConfig.algorithm === 'mmr' && "Optimizes for diversity. Fetches more documents and re-ranks them to minimize redundant information."}
+            </div>
+          </div>
+
+          {searchConfig.algorithm === 'mmr' && (
+            <div style={{ marginBottom: '30px', padding: '20px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                <label style={{ fontWeight: 'bold' }}>MMR Diversity Factor</label>
+                <span style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>{searchConfig.mmrDiversity.toFixed(2)}</span>
+              </div>
+              <input 
+                type="range" 
+                min="0" max="1" step="0.05"
+                value={searchConfig.mmrDiversity}
+                onChange={(e) => saveSettings({ ...searchConfig, mmrDiversity: parseFloat(e.target.value) })}
+                style={{ width: '100%', cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '0.8em', color: 'var(--text-secondary)' }}>
+                <span>0.0 (Pure Relevance)</span>
+                <span>1.0 (Pure Diversity)</span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '40px' }}>
+            {saveStatus && <span style={{ color: 'var(--status-running)', marginRight: '15px', fontWeight: 'bold' }}>{saveStatus}</span>}
+          </div>
+        </div>
       )}
     </div>
   );
