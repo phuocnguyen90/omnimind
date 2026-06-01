@@ -8,7 +8,7 @@ OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin b
 
 While there are already several excellent MCP (Model Context Protocol) servers available for connecting to Obsidian, and robust integrations for Zotero, relying on them for local AI research presents a significant challenge: **Tool Overload**. 
 
-Providing too many disparate tools or multiple MCP servers to smaller, local agents (especially models under 10B parameters) often leads to unreliable behavior, confusion in tool selection, and severe hallucinations. 
+Providing too many disparate tools or multiple MCP servers to smaller, local agents (especially models under 15B parameters) often leads to unreliable behavior, confusion in tool selection, and severe hallucinations. 
 
 **OmniMind** was built to solve this by providing a single, highly-curated, and **unified toolset** specifically designed to help tiny models excel at academic and personal research. 
 
@@ -26,10 +26,8 @@ Additionally, OmniMind brings industry-best retrieval algorithms directly to loc
     *   **Obsidian Sync**: Live-watches your Obsidian vault for modifications and instantly updates vector embeddings as you write.
     *   **Zotero Integration**: Scans your local Zotero SQLite database and processes the linked PDFs.
 *   **Hybrid Vision OCR**: Employs an intelligent fallback system using local Vision Models. If a PDF lacks a proper text layer, OmniMind automatically parses the raw pages through a Vision LLM to extract high-fidelity text.
-*   **Premium Web Control Panel**: Features a sleek Vite + React dashboard running securely in the background, allowing you to monitor the ingestion queue, pause/resume tasks, retry failed jobs, and browse your raw LanceDB vector chunks.
-*   **LanceDB Vector Store**: Uses LanceDB for blazing-fast, serverless semantic search with optimistic concurrency controls.
-*   **Native SDK Orchestration**: Uses LM Studio's built-in agentic `.act()` workflows to intelligently decide when to query the knowledge graph or answer directly.
-
+*   **Premium Web Control Panel**: Features a sleek background dashboard allowing you to monitor the ingestion queue, pause/resume tasks, retry failed jobs, and browse your extracted notes and papers.
+*   **Lightning-Fast Search**: Instantly retrieve semantic matches from your entire personal database.
 ---
 
 ## 🚀 Getting Started

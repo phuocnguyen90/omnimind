@@ -11,6 +11,11 @@ If you are an AI agent assisting with the codebase, please refer to the `AGENTS.
 *   **PDF Processing**: `mupdf`
 *   **Orchestration**: Native LM Studio SDK (`.act()` loop)
 
+## 🏗️ Architecture Deep Dive
+
+*   **LanceDB Vector Store**: Uses LanceDB for blazing-fast, serverless semantic search. We leverage LanceDB's optimistic concurrency controls to ensure the ingestion queue and search API don't collide.
+*   **Premium Web Control Panel**: The UI is built using Vite + React. It allows developers and power-users to browse the raw LanceDB vector chunks directly to debug ingestion logic.
+*   **Native SDK Orchestration**: We rely exclusively on LM Studio's built-in agentic `.act()` workflows. The agent inherently decides when to query the knowledge graph or answer directly, eliminating the need for heavy, error-prone third-party orchestration frameworks like LangChain.
 ## 🚀 Setting Up the Developer Environment
 
 If you want to modify the plugin from source:
