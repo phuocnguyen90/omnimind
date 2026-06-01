@@ -19,6 +19,13 @@ OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin b
 
 ## 🚀 Getting Started
 
+### 💡 Recommended Models (Quickstart)
+To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 with 10-12 GB VRAM), we recommend loading the following models simultaneously in LM Studio (ensure "Keep multiple models in memory" is enabled):
+
+1. **Embedding**: `lmstudio-community/embeddinggemma-300m-qat-GGUF` (Lightweight and highly accurate)
+2. **Vision / OCR**: `ggml-org/DeepSeek-OCR-GGUF/DeepSeek-OCR-Q8_0.gguf` (~4 GB, fantastic for extracting raw text from scanned PDFs)
+3. **Inference / Chat**: `ibm/granite-4-h-tiny` (~4 GB, fast reasoning for RAG synthesis)
+
 ### Prerequisites
 
 1.  **LM Studio** installed and running.
@@ -28,12 +35,22 @@ OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin b
 
 ### Installation
 
-Clone the repository and install dependencies:
+#### 📦 For Users (Recommended)
+1. Download the latest `omnimind-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phuocnguyen90/omnimind/releases) page.
+2. Extract the folder anywhere on your machine.
+3. Open a Terminal or Command Prompt inside the extracted folder.
+4. Run the following command to download the required native database components for your operating system:
+   ```bash
+   npm install
+   ```
 
+#### 🛠️ For Developers
+If you want to modify the plugin from source:
 ```bash
+git clone https://github.com/phuocnguyen90/omnimind.git
+cd omnimind
 npm install
-cd ui && npm install && npm run build
-cd ..
+npm run build
 ```
 
 ### Configuration
