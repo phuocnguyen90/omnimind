@@ -145,10 +145,32 @@ export class VectorStore {
 
     console.log(`[VectorStore] Searching with algorithm: ${searchAlgorithm}`);
 
+    const ensureFts = async () => {
+      console.log("FTS Index missing. Creating now...");
+      try {
+        await table.createIndex("text", { config: lancedb.Index.fts() });
+        console.log("Successfully created FTS index.");
+      } catch (e) {
+        console.warn("Could not create FTS index on the fly:", e);
+      }
+    };
+
     if (searchAlgorithm === 'bm25') {
-      let query = table.search(queryString).fullTextSearch(queryString).limit(limit);
-      if (options?.sourceFilter) query = query.where(`source = '${options.sourceFilter}'`);
-      return (await query.toArray()) as unknown as DocumentChunk[];
+      const runQuery = async () => {
+        let query = table.search(queryString).fullTextSearch(queryString).limit(limit);
+        if (options?.sourceFilter) query = query.where(`source = '${options.sourceFilter}'`);
+        return (await query.toArray()) as unknown as DocumentChunk[];
+      };
+      
+      try {
+        return await runQuery();
+      } catch (e: any) {
+        if (e.message && e.message.includes('INVERTED index')) {
+          await ensureFts();
+          return await runQuery();
+        }
+        throw e;
+      }
     }
 
     if (searchAlgorithm === 'hybrid') {
@@ -161,7 +183,19 @@ export class VectorStore {
         ftsQuery = ftsQuery.where(`source = '${options.sourceFilter}'`);
       }
 
-      const [vResults, ftsResults] = await Promise.all([vQuery.toArray(), ftsQuery.toArray()]);
+      let vResults: any[];
+      let ftsResults: any[];
+      
+      try {
+        [vResults, ftsResults] = await Promise.all([vQuery.toArray(), ftsQuery.toArray()]);
+      } catch (e: any) {
+        if (e.message && e.message.includes('INVERTED index')) {
+          await ensureFts();
+          [vResults, ftsResults] = await Promise.all([vQuery.toArray(), ftsQuery.toArray()]);
+        } else {
+          throw e;
+        }
+      }
 
       // Simple Reciprocal Rank Fusion
       const scores = new Map<string, { doc: any, score: number }>();
