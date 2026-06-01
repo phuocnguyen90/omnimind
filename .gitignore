@@ -9,3 +9,23 @@ dist/
 *.zip
 lm_studio_big_rag_plugin/
 AGENTS.md
+
+# UI Folder
+ui/logs
+ui/*.log
+ui/npm-debug.log*
+ui/yarn-debug.log*
+ui/yarn-error.log*
+ui/pnpm-debug.log*
+ui/lerna-debug.log*
+ui/dist-ssr
+ui/*.local
+ui/.vscode/*
+!ui/.vscode/extensions.json
+ui/.idea
+ui/.DS_Store
+ui/*.suo
+ui/*.ntvs*
+ui/*.njsproj
+ui/*.sln
+ui/*.sw?
