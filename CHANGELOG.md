@@ -1,6 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.3.0] - 2026-06-01
+
+### 🚀 Features
+- **Native Configuration UI**: Completely migrated away from `.env` files to LM Studio's native `createConfigSchematics()`. End users can now visually configure their Obsidian vault and Zotero database paths natively inside the LM Studio plugin settings menu!
+- **Native Orchestration**: Removed `LangGraph` and migrated the plugin to utilize the LM Studio `.act()` multi-round native orchestration loop.
+- **Improved Embedding UX**: `EmbeddingPipeline` now gracefully auto-loads models from disk via `client.embedding.load()` if they are missing from memory, preventing execution halts.
+- **Robust Tools**: Drastically improved the reliability of Obsidian editing tools for smaller models. Introduced an `append_obsidian_note` tool and added strict exact-match chain-of-thought system prompts for `edit_obsidian_note`.
+
+### 🐛 Bug Fixes
+- **Build System**: Fixed an esbuild `ES2024` unhandled target warning by properly bumping the `tsconfig.json` target to `ES2022`.
+- **Git Ignore**: Flattened `ui/.gitignore` into the root `.gitignore` to resolve nested ignore file errors during `lms push` bundling.
 
 ## [0.2.1] - 2026-06-01
 ### 🐛 Bug Fixes

@@ -1,6 +1,6 @@
 {
   "name": "omnimind",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,8 +9,8 @@
     "build": "tsc",
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
-  "author": "Your Name",
-  "license": "UNLICENSED",
+  "author": "Phuoc Nguyen",
+  "license": "MIT",
   "dependencies": {
     "@lancedb/lancedb": "^0.16.0",
     "@lmstudio/sdk": "^1.5.0",
