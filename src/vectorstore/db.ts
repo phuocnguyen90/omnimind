@@ -101,14 +101,17 @@ export class VectorStore {
   /**
    * Helper to calculate cosine similarity
    */
-  private cosineSimilarity(a: number[], b: number[]): number {
+  private cosineSimilarity(a: number[], b: any): number {
+    // LanceDB returns vectors as Apache Arrow Vector objects, we need to convert to array
+    const bArray = b && typeof b.toArray === 'function' ? b.toArray() : b;
+    
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
+      dotProduct += a[i] * bArray[i];
       normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      normB += bArray[i] * bArray[i];
     }
     if (normA === 0 || normB === 0) return 0;
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
@@ -261,6 +264,11 @@ export class VectorStore {
             bestScore = mmrScore;
             bestIndex = i;
           }
+        }
+
+        if (bestIndex === -1) {
+          console.warn("MMR failed to find a valid bestIndex (possibly due to NaN vectors). Breaking loop.");
+          break;
         }
 
         selected.push(unselected[bestIndex]);

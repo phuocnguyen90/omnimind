@@ -38,7 +38,7 @@ export const clusterPapersTool = tool({
     // Dynamic import to avoid loading unless called
     const { kmeans } = await import("../vectorstore/cluster");
     
-    const vectors = results.map(r => r.vector);
+    const vectors = results.map(r => (r.vector as any).toArray ? (r.vector as any).toArray() : r.vector);
     const assignments = kmeans(vectors, k);
     
     const clusters: Record<number, any[]> = {};
