@@ -30,7 +30,7 @@ To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 w
 
 1.  **LM Studio** installed and running.
 2.  **Node.js** (v20+ recommended).
-3.  Load an **Embedding Model** in LM Studio (e.g., `nomic-embed-text`).
+3.  Load an **Embedding Model** in LM Studio (e.g., `embeddinggemma-300m-qat-GGUF`).
 4.  *(Optional)* Load a **Vision Model** in LM Studio if you have scanned PDFs that require OCR. Ensure "Keep multiple models in memory" is enabled.
 
 ### Installation

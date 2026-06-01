@@ -40,7 +40,7 @@ export async function runAutomatedTest(query: string) {
         await lmClient.embedding.load(targetModel);
         console.log(`✅ Successfully loaded embedding model!`);
       } else {
-        console.error("❌ FAILED: No embedding models found on disk. Please download one (e.g., nomic-embed-text) in LM Studio.");
+        console.error("❌ FAILED: No embedding models found on disk. Please download one (e.g., embeddinggemma-300m-qat-GGUF) in LM Studio.");
         return; // Abort test since embeddings are strictly required
       }
     } else {

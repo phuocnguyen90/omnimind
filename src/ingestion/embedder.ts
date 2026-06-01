@@ -27,7 +27,7 @@ export class EmbeddingPipeline {
           ? await this.client.embedding.model(this.embedModelIdentifier)
           : await this.client.embedding.model();
       } catch (err: any) {
-        if (err.message?.includes("No model found")) {
+        if (err.title?.includes("No model found") || err.message?.includes("No loaded model satisfies")) {
           console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
           const downloadedModels = await this.client.system.listDownloadedModels();
           const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
@@ -38,7 +38,7 @@ export class EmbeddingPipeline {
             this.cachedModel = await this.client.embedding.load(targetModel);
             console.log(`[Embedder] Successfully loaded embedding model!`);
           } else {
-            throw new Error("No embedding models found on disk. Please download one (e.g., nomic-embed-text) in LM Studio.");
+            throw new Error("No embedding models found on disk. Please download one (e.g., embeddinggemma-300m) in LM Studio.");
           }
         } else {
           throw err;
@@ -113,7 +113,7 @@ export class EmbeddingPipeline {
           ? await this.client.embedding.model(this.embedModelIdentifier)
           : await this.client.embedding.model();
       } catch (err: any) {
-        if (err.message?.includes("No model found")) {
+        if (err.title?.includes("No model found") || err.message?.includes("No loaded model satisfies")) {
           console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
           const downloadedModels = await this.client.system.listDownloadedModels();
           const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
@@ -124,7 +124,7 @@ export class EmbeddingPipeline {
             this.cachedModel = await this.client.embedding.load(targetModel);
             console.log(`[Embedder] Successfully loaded embedding model!`);
           } else {
-            throw new Error("No embedding models found on disk. Please download one (e.g., nomic-embed-text) in LM Studio.");
+            throw new Error("No embedding models found on disk. Please download one (e.g., embeddinggemma-300m) in LM Studio.");
           }
         } else {
           throw err;
