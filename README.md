@@ -59,10 +59,13 @@ ZOTERO_STORAGE_PATH="C:\Path\To\Your\Zotero\storage"
 MAX_CONCURRENT_WORKERS=4
 ```
 
+### Loading into LM Studio
+
 1. Open LM Studio.
-2. In the Plugins or Developer section, use the LM Studio CLI or UI to load the extracted `omnimind-plugin` folder.
-3. The OmniMind plugin will automatically register as a tool.
-4. Open a chat, and the ingestion engine will kick off automatically, parsing your Zotero and Obsidian vaults in the background!
+2. **Enable Multiple Models**: Go to Settings and ensure **"Keep multiple models in memory"** is enabled so you can run Embedding, Vision, and Chat models concurrently.
+3. **Load the Plugin**: Navigate to the Developer / Plugins tab, click **"Load Plugin"**, and select the extracted `omnimind-plugin` folder.
+4. **Enable Tools**: Open a Chat window. On the right sidebar, ensure **"Tools"** is toggled **ON** and the OmniMind tool is checked.
+5. Send your first message! The ingestion engine will kick off automatically in the background.
 
 ---
 
