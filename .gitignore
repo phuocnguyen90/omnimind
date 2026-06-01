@@ -8,3 +8,4 @@ dist/
 *.tgz
 *.zip
 lm_studio_big_rag_plugin/
+AGENTS.md
