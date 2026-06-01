@@ -17,31 +17,41 @@ export class EmbeddingPipeline {
    * Caches the model instance to prevent spamming LM Studio's getModelInfo endpoint.
    */
   public async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      if (!this.client || !this.client.embedding) {
-        throw new Error("LM Studio client not fully initialized.");
-      }
-      
-      if (!this.cachedModel) {
+    if (!this.client || !this.client.embedding) {
+      throw new Error("LM Studio client not fully initialized.");
+    }
+    
+    if (!this.cachedModel) {
+      try {
         this.cachedModel = this.embedModelIdentifier 
           ? await this.client.embedding.model(this.embedModelIdentifier)
           : await this.client.embedding.model();
+      } catch (err: any) {
+        if (err.message?.includes("No model found")) {
+          console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
+          const downloadedModels = await this.client.system.listDownloadedModels();
+          const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
+          
+          if (embeddingModels.length > 0) {
+            const targetModel = embeddingModels[0].path;
+            console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
+            this.cachedModel = await this.client.embedding.load(targetModel);
+            console.log(`[Embedder] Successfully loaded embedding model!`);
+          } else {
+            throw new Error("No embedding models found on disk. Please download one (e.g., nomic-embed-text) in LM Studio.");
+          }
+        } else {
+          throw err;
+        }
       }
-        
-      try {
-        const embeddingResult = await (this.cachedModel as any).embed(text);
-        return embeddingResult.embedding; 
-      } catch (err) {
-        // If it fails (e.g., model unloaded), clear cache and re-throw so it fetches again next time
-        this.cachedModel = null;
-        throw err;
-      }
-    } catch (e: any) {
-      if (e.message?.includes("No model found")) {
-        throw new Error("No embedding model is currently loaded in LM Studio! Please load an embedding model alongside your chat model (ensure 'Keep multiple models in memory' is enabled) and try again.");
-      }
-      console.error("Failed to generate embedding:", e);
-      throw e;
+    }
+      
+    try {
+      const embeddingResult = await (this.cachedModel as any).embed(text);
+      return embeddingResult.embedding; 
+    } catch (err) {
+      this.cachedModel = null;
+      throw err;
     }
   }
 
@@ -98,9 +108,28 @@ export class EmbeddingPipeline {
     }
 
     if (!this.cachedModel) {
-      this.cachedModel = this.embedModelIdentifier 
-        ? await this.client.embedding.model(this.embedModelIdentifier)
-        : await this.client.embedding.model();
+      try {
+        this.cachedModel = this.embedModelIdentifier 
+          ? await this.client.embedding.model(this.embedModelIdentifier)
+          : await this.client.embedding.model();
+      } catch (err: any) {
+        if (err.message?.includes("No model found")) {
+          console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
+          const downloadedModels = await this.client.system.listDownloadedModels();
+          const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
+          
+          if (embeddingModels.length > 0) {
+            const targetModel = embeddingModels[0].path;
+            console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
+            this.cachedModel = await this.client.embedding.load(targetModel);
+            console.log(`[Embedder] Successfully loaded embedding model!`);
+          } else {
+            throw new Error("No embedding models found on disk. Please download one (e.g., nomic-embed-text) in LM Studio.");
+          }
+        } else {
+          throw err;
+        }
+      }
     }
 
     // Process in batches of 20 to prevent overwhelming LM Studio API
