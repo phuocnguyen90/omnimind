@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "start": "tsc && node --enable-source-maps dist/index.js",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "author": "Your Name",
   "license": "UNLICENSED",
@@ -31,6 +32,7 @@
     "@types/pdf-parse": "^1.1.5",
     "@types/sql.js": "^1.4.11",
     "esbuild": "^0.28.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.2"
   },
   "engines": {

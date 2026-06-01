@@ -27,6 +27,12 @@ export let syncTracker: SyncTracker;
 export let lmClient: any;
 export let activeObsidianVaultPath = "";
 
+// Test injection helpers
+export function _testInjectObsidianVaultPath(p: string) { activeObsidianVaultPath = p; }
+export function _testInjectEmbedder(e: any) { embedder = e; }
+export function _testInjectVectorStore(v: any) { vectorStore = v; }
+export function _testInjectZoteroExtractor(z: any) { zoteroExtractor = z; }
+
 // LM Studio plugin entry point
 export async function main(context: any) {
   console.log("OmniMind plugin activated with LangGraph orchestration!");
@@ -160,31 +166,4 @@ export async function main(context: any) {
   }
 }
 
-/**
- * An automated test to verify LangGraph and LM Studio LLM inference without needing the Chat UI.
- */
-export async function runAutomatedTest(query: string) {
-  console.log(`\n==================================================`);
-  console.log(`[AUTOMATED TEST] Starting query: "${query}"`);
-  console.log(`==================================================\n`);
-  
-  if (!lmClient) {
-    console.error("[AUTOMATED TEST] ERROR: lmClient is null! LM Studio did not inject the tools provider.");
-    return;
-  }
-
-  try {
-    const finalState = await omniMindGraph.invoke({
-      messages: [new HumanMessage(query)]
-    });
-    
-    console.log(`\n==================================================`);
-    console.log(`[AUTOMATED TEST] Result successfully generated!`);
-    console.log(`==================================================`);
-    const finalMessage = finalState.messages[finalState.messages.length - 1];
-    console.log(finalMessage?.content || "No response generated.");
-    console.log(`\n==================================================\n`);
-  } catch (err) {
-    console.error("[AUTOMATED TEST] LangGraph Execution Failed:", err);
-  }
-}
+export { runAutomatedTest } from './diagnostics/runAutomatedTest';
