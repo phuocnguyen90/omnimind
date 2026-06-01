@@ -9,7 +9,8 @@ export const writeObsidianNoteTool = tool({
   description: "Create a new Markdown note in the user's Obsidian vault. SYSTEM INSTRUCTIONS: When writing for Obsidian, 1) Always use [[WikiLinks]] to link to other notes. 2) Place metadata in YAML frontmatter (between --- blocks) at the very top of the file.",
   parameters: {
     filename: z.string().describe("The name of the note (e.g., 'Research Summary.md'). Must end in .md."),
-    content: z.string().describe("The raw Markdown content of the note.")
+    content: z.string().describe("The raw Markdown content of the note."),
+    overwrite: z.boolean().optional().describe("Set to true to overwrite the file if it already exists.")
   },
   implementation: async (params: any) => {
     console.log(`[Tool] write_obsidian_note called with filename: ${params.filename}`);
@@ -20,8 +21,8 @@ export const writeObsidianNoteTool = tool({
     filename = filename.replace(/(\.\.\/|\.\.\\)/g, '');
     
     const filePath = path.join(activeObsidianVaultPath, filename);
-    if (fs.existsSync(filePath)) {
-      return JSON.stringify({ error: `File ${filename} already exists. Please choose a different name or use edit_obsidian_note.` });
+    if (fs.existsSync(filePath) && !params.overwrite) {
+      return JSON.stringify({ error: `File ${filename} already exists. Please choose a different name, set overwrite to true, or use edit/append tools.` });
     }
     
     try {
@@ -63,7 +64,7 @@ export const readObsidianNoteTool = tool({
 
 export const editObsidianNoteTool = tool({
   name: "edit_obsidian_note",
-  description: "Edit an existing Obsidian note by precisely finding and replacing a block of text. SYSTEM INSTRUCTIONS: When generating new text for Obsidian, always use [[WikiLinks]] and standard YAML frontmatter.",
+  description: "Edit an existing Obsidian note by precisely finding and replacing a block of text. SYSTEM INSTRUCTIONS: 1) ALWAYS use read_obsidian_note first to fetch the exact text you want to change. 2) Copy the exact text you want to replace into target_content. Do not summarize it. 3) Provide the new text in replacement_content. 4) Use [[WikiLinks]] and YAML frontmatter.",
   parameters: {
     filename: z.string().describe("The exact name of the note to edit."),
     target_content: z.string().describe("The exact string block to remove or replace. Must match the file exactly."),
@@ -85,7 +86,7 @@ export const editObsidianNoteTool = tool({
     try {
       let content = fs.readFileSync(filePath, 'utf-8');
       if (!content.includes(params.target_content)) {
-        return JSON.stringify({ error: "The target_content was not found exactly in the file. Use read_obsidian_note to verify the exact text." });
+        return JSON.stringify({ error: "The target_content was not found exactly in the file. You MUST use read_obsidian_note first to copy the exact text, character-for-character (including whitespace)." });
       }
       
       content = content.replace(params.target_content, params.replacement_content);
@@ -110,5 +111,34 @@ export const searchPersonalNotesTool = tool({
     const queryVector = await embedder.generateEmbedding(params.query);
     const results = await vectorStore.search(queryVector, { sourceFilter: 'obsidian', limit });
     return JSON.stringify(results.map(r => ({ path: r.path, text: r.text, links_to: r.links_to })));
+  }
+});
+
+export const appendObsidianNoteTool = tool({
+  name: "append_obsidian_note",
+  description: "Add new text to the very end of an existing Obsidian note. This is much easier and safer than edit_obsidian_note if you just want to add new information.",
+  parameters: {
+    filename: z.string().describe("The exact name of the note to append to."),
+    content: z.string().describe("The text to append to the bottom of the note.")
+  },
+  implementation: async (params: any) => {
+    console.log(`[Tool] append_obsidian_note called for filename: ${params.filename}`);
+    if (!activeObsidianVaultPath) return JSON.stringify({ error: "Obsidian vault path not configured." });
+    
+    let filename = params.filename;
+    if (!filename.endsWith('.md')) filename += '.md';
+    filename = filename.replace(/(\.\.\/|\.\.\\)/g, '');
+    
+    const filePath = path.join(activeObsidianVaultPath, filename);
+    if (!fs.existsSync(filePath)) {
+      return JSON.stringify({ error: `File ${filename} not found in vault.` });
+    }
+    
+    try {
+      fs.appendFileSync(filePath, "\n" + params.content);
+      return JSON.stringify({ success: true, message: `Successfully appended to ${filename}.` });
+    } catch (e: any) {
+      return JSON.stringify({ error: `Failed to append to note: ${e.message}` });
+    }
   }
 });

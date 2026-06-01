@@ -1,7 +1,7 @@
 import { tool } from "@lmstudio/sdk";
 import { z } from "zod";
 import { getPaperInfoTool, searchAcademicReferencesTool, clusterPapersTool } from "./zoteroTools";
-import { writeObsidianNoteTool, readObsidianNoteTool, editObsidianNoteTool, searchPersonalNotesTool } from "./obsidianTools";
+import { writeObsidianNoteTool, readObsidianNoteTool, editObsidianNoteTool, searchPersonalNotesTool, appendObsidianNoteTool } from "./obsidianTools";
 import { vectorStore, embedder } from "../index";
 
 export const searchVectorDatabaseTool = tool({
@@ -45,6 +45,7 @@ export const toolsProvider = {
     clusterPapersTool,
     writeObsidianNoteTool,
     readObsidianNoteTool,
-    editObsidianNoteTool
+    editObsidianNoteTool,
+    appendObsidianNoteTool
   ],
 };
