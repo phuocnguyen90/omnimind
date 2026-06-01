@@ -13,8 +13,6 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@lancedb/lancedb": "^0.16.0",
-    "@langchain/core": "^0.3.40",
-    "@langchain/langgraph": "^0.2.46",
     "@lmstudio/sdk": "^1.5.0",
     "cheerio": "^1.2.0",
     "chokidar": "^4.0.3",

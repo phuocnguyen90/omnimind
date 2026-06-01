@@ -2,7 +2,6 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 import dotenv from "dotenv";
-import { HumanMessage } from "@langchain/core/messages";
 
 import { VectorStore } from "./vectorstore/db";
 import { EmbeddingPipeline } from "./ingestion/embedder";
@@ -12,8 +11,6 @@ import { SyncTracker } from "./ingestion/tracker";
 import { JobQueue, Job } from "./ingestion/queue";
 import { startControlServer } from "./server/api";
 import { toolsProvider } from "./tools/registry";
-import { omniMindGraph } from "./orchestrator/graph";
-
 export let ingestionState: 'RUNNING' | 'PAUSED' = 'RUNNING';
 
 dotenv.config();
@@ -35,7 +32,7 @@ export function _testInjectZoteroExtractor(z: any) { zoteroExtractor = z; }
 
 // LM Studio plugin entry point
 export async function main(context: any) {
-  console.log("OmniMind plugin activated with LangGraph orchestration!");
+  console.log("OmniMind plugin activated with native LM Studio orchestration!");
   
   const workspaceDir = path.join(os.homedir(), ".omnimind");
   vectorStore = new VectorStore(workspaceDir);

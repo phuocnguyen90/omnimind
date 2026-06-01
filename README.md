@@ -13,7 +13,7 @@ OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin b
 *   **Hybrid Vision OCR**: Employs an intelligent fallback system using local Vision Models. If a PDF lacks a proper text layer, OmniMind automatically parses the raw pages through a Vision LLM to extract high-fidelity text.
 *   **Premium Web Control Panel**: Features a sleek Vite + React dashboard running securely in the background, allowing you to monitor the ingestion queue, pause/resume tasks, retry failed jobs, and browse your raw LanceDB vector chunks.
 *   **LanceDB Vector Store**: Uses LanceDB for blazing-fast, serverless semantic search with optimistic concurrency controls.
-*   **LangGraph Orchestration**: Advanced agentic workflows to intelligently decide when to query the knowledge graph or answer directly.
+*   **Native SDK Orchestration**: Uses LM Studio's built-in agentic `.act()` workflows to intelligently decide when to query the knowledge graph or answer directly.
 
 ---
 

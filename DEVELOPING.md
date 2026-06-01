@@ -9,7 +9,7 @@ If you are an AI agent assisting with the codebase, please refer to the `AGENTS.
 *   **Frontend**: React, Vite, CSS (No-Tailwind)
 *   **Vector Database**: LanceDB
 *   **PDF Processing**: `mupdf`
-*   **Orchestration**: LangGraph
+*   **Orchestration**: Native LM Studio SDK (`.act()` loop)
 
 ## 🚀 Setting Up the Developer Environment
 

@@ -1,5 +1,3 @@
-import { HumanMessage } from "@langchain/core/messages";
-import { omniMindGraph } from "../orchestrator/graph";
 import { lmClient } from "../index";
 
 /**
@@ -53,16 +51,16 @@ export async function runAutomatedTest(query: string) {
     console.log(`[AUTOMATED TEST] Executing query: "${query}"`);
     console.log(`==================================================\n`);
 
-    const finalState = await omniMindGraph.invoke({
-      messages: [new HumanMessage(query)]
+    const llm = await lmClient.llm.model();
+    const { toolsProvider } = await import("../tools/registry");
+    
+    await llm.act(query, toolsProvider.tools, {
+      onMessage: (message: any) => console.log(message.toString()),
     });
     
     console.log(`\n==================================================`);
     console.log(`[AUTOMATED TEST] Result successfully generated!`);
-    console.log(`==================================================`);
-    const finalMessage = finalState.messages[finalState.messages.length - 1];
-    console.log(finalMessage?.content || "No response generated.");
-    console.log(`\n==================================================\n`);
+    console.log(`==================================================\n`);
   } catch (err) {
     console.error("[AUTOMATED TEST] Execution Failed:", err);
   }
