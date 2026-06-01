@@ -6,7 +6,7 @@ import { activeObsidianVaultPath, embedder, vectorStore } from "../index";
 
 export const writeObsidianNoteTool = tool({
   name: "write_obsidian_note",
-  description: "Create a new Markdown note in the user's Obsidian vault.",
+  description: "Create a new Markdown note in the user's Obsidian vault. SYSTEM INSTRUCTIONS: When writing for Obsidian, 1) Always use [[WikiLinks]] to link to other notes. 2) Place metadata in YAML frontmatter (between --- blocks) at the very top of the file.",
   parameters: {
     filename: z.string().describe("The name of the note (e.g., 'Research Summary.md'). Must end in .md."),
     content: z.string().describe("The raw Markdown content of the note.")
@@ -63,7 +63,7 @@ export const readObsidianNoteTool = tool({
 
 export const editObsidianNoteTool = tool({
   name: "edit_obsidian_note",
-  description: "Edit an existing Obsidian note by precisely finding and replacing a block of text.",
+  description: "Edit an existing Obsidian note by precisely finding and replacing a block of text. SYSTEM INSTRUCTIONS: When generating new text for Obsidian, always use [[WikiLinks]] and standard YAML frontmatter.",
   parameters: {
     filename: z.string().describe("The exact name of the note to edit."),
     target_content: z.string().describe("The exact string block to remove or replace. Must match the file exactly."),
