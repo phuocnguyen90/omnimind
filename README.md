@@ -78,6 +78,29 @@ The Control Panel provides a real-time dashboard to:
 
 ---
 
+## 🧠 Best Practices & Local Model Quirks
+
+When using local models (especially those under 10B parameters like `gpt-oss-20b` or `ibm/granite-4-h-tiny`) for Retrieval-Augmented Generation (RAG), you may encounter specific quirks. Understanding these will help you steer the agent effectively.
+
+### 1. The "Helpfulness" Bias (Hallucinations)
+Instruction-tuned models are heavily rewarded during training for being helpful. If you ask for a list of reading materials and the database only finds 1 or 2 matches, the model's neural weights will often "want" to give you a top-5 list. To satisfy this, it may invent (hallucinate) realistic-sounding reports or government agencies (e.g., inventing an "FTC AI Guidance" document).
+
+**The Fix:** Use extremely strict, negative-constraint system prompts. 
+*Recommended System Prompt Template:*
+> *"You are an extraction assistant. Your job is to extract the names of books, papers, or authors based on the Zotero database or Obsidian notes that you have access via the tools. Do not mention any prior knowledge that does not explicitly appear from the search results of the tool."*
+
+### 2. Pronoun Binding and Context Tracking
+If you ask about "EU AI Policy" in Turn 1, and then in Turn 2 ask *"What is Floridi's take on this?"*, the LLM will strongly bind the word "this" to the exact topic of EU AI Policy. If it retrieves a broad paper by Floridi about general "Digital Governance," it may falsely claim the paper is irrelevant because it doesn't mention the EU explicitly.
+
+**The Fix:** When you want the agent to synthesize broad concepts or make creative connections across texts, explicitly ask it to synthesize. Avoid ambiguous pronouns.
+*Example:* > *"What is Floridi's take on the broader concept of AI governance, and how might his 2018 paper on 'Soft Ethics' apply to the EU policies we just discussed?"*
+
+### 3. The "Tiny Model" Trap (False Negatives)
+Extremely small models (e.g., `< 5B parameters`) struggle with strict negative constraints. If you give them the strict prompt above, they may become overly rigid. For example, if you ask for "US reading materials", and a chunk is titled "AI Index Report 2026" but the text mentions "California" and "Montana", the tiny model might fail to realize that California is in the US, and output: *"I could not find any US-specific materials."*
+
+**The Fix:** If you experience false negatives (the database retrieves the document but the agent ignores it), you either need to loosen the prompt slightly or upgrade your inference model to a slightly larger class (e.g., `Llama-3-8B-Instruct` or `Qwen-2.5-7B`) for the final RAG generation step.
+
+---
 
 ## 📝 License
 
