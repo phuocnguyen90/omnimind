@@ -4,6 +4,21 @@ OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin b
 
 ---
 
+## 🎯 Why This Project Exists
+
+While there are already several excellent MCP (Model Context Protocol) servers available for connecting to Obsidian, and robust integrations for Zotero, relying on them for local AI research presents a significant challenge: **Tool Overload**. 
+
+Providing too many disparate tools or multiple MCP servers to smaller, local agents (especially models under 10B parameters) often leads to unreliable behavior, confusion in tool selection, and severe hallucinations. 
+
+**OmniMind** was built to solve this by providing a single, highly-curated, and **unified toolset** specifically designed to help tiny models excel at academic and personal research. 
+
+Additionally, OmniMind brings industry-best retrieval algorithms directly to local agents:
+- **BM25 Search**: For exact keyword and author matching.
+- **MMR (Maximal Marginal Relevance) Search**: To ensure diverse, non-redundant context retrieval.
+- *Upcoming*: **Knowledge Graph Search**, leveraging Obsidian's native graph connections to traverse linked concepts.
+
+---
+
 ## ✨ Features
 
 *   **100% Local Privacy**: Everything—from your academic PDFs and personal notes to the embedding models and vector database—runs locally on your machine.
@@ -80,7 +95,7 @@ The Control Panel provides a real-time dashboard to:
 
 ## 🧠 Best Practices & Local Model Quirks
 
-When using local models (especially those under 10B parameters like `gpt-oss-20b` or `ibm/granite-4-h-tiny`) for Retrieval-Augmented Generation (RAG), you may encounter specific quirks. Understanding these will help you steer the agent effectively.
+When using local models (especially those under 30B parameters like `gpt-oss-20b` or `ibm/granite-4-h-tiny`) for Retrieval-Augmented Generation (RAG), you may encounter specific quirks. Understanding these will help you steer the agent effectively.
 
 ### 1. The "Helpfulness" Bias (Hallucinations)
 Instruction-tuned models are heavily rewarded during training for being helpful. If you ask for a list of reading materials and the database only finds 1 or 2 matches, the model's neural weights will often "want" to give you a top-5 list. To satisfy this, it may invent (hallucinate) realistic-sounding reports or government agencies (e.g., inventing an "FTC AI Guidance" document).
