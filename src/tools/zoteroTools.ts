@@ -29,7 +29,7 @@ export const clusterPapersTool = tool({
     const k = params.k || 3;
     const queryVector = await embedder.generateEmbedding(params.query);
     // Fetch top 50 results to cluster
-    const results = await vectorStore.search(queryVector, { sourceFilter: 'zotero', limit: 50 });
+    const results = await vectorStore.search(params.query, queryVector, { sourceFilter: 'zotero', limit: 50 });
     
     if (results.length < k) {
       return JSON.stringify({ error: `Not enough papers found (${results.length}) to form ${k} clusters.` });

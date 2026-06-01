@@ -1,5 +1,7 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 
 /**
  * IMPORTANT: This must remain a `type` and NOT an `interface`.
@@ -56,7 +58,7 @@ export class VectorStore {
 
     await this.acquireWriteLock(async () => {
       const tableNames = await this.db!.tableNames();
-      
+
       // If table exists, open it. Otherwise create it.
       let table: lancedb.Table;
       if (tableNames.includes(this.tableName)) {
@@ -64,6 +66,13 @@ export class VectorStore {
         await table.add(chunks);
       } else {
         table = await this.db!.createTable(this.tableName, chunks);
+        // Create a BM25 Full Text Search index on the 'text' column
+        try {
+          await table.createIndex("text", { config: lancedb.Index.fts() });
+          console.log("Created FTS index on 'text' column.");
+        } catch (e) {
+          console.warn("Could not create FTS index:", e);
+        }
       }
     });
   }
@@ -73,7 +82,7 @@ export class VectorStore {
    */
   public async deleteByPath(path: string) {
     if (!this.db) throw new Error("Database not initialized");
-    
+
     await this.acquireWriteLock(async () => {
       const tableNames = await this.db!.tableNames();
       if (tableNames.includes(this.tableName)) {
@@ -90,13 +99,28 @@ export class VectorStore {
   }
 
   /**
-   * Performs a vector similarity search.
+   * Helper to calculate cosine similarity
    */
-  public async search(queryVector: number[], options?: { sourceFilter?: 'obsidian' | 'zotero', limit?: number }): Promise<DocumentChunk[]> {
+  private cosineSimilarity(a: number[], b: number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  /**
+   * Performs advanced search (Vector, BM25, Hybrid, MMR).
+   */
+  public async search(queryString: string, queryVector: number[], options?: { sourceFilter?: 'obsidian' | 'zotero', limit?: number }): Promise<DocumentChunk[]> {
     if (!this.db) throw new Error("Database not initialized");
-    
+
     const tableNames = await this.db.tableNames();
-    console.log(`LanceDB tables found: ${tableNames.join(", ")}`);
     if (!tableNames.includes(this.tableName)) {
       console.warn(`Table ${this.tableName} not found!`);
       return []; // Table hasn't been created yet (no data)
@@ -104,8 +128,117 @@ export class VectorStore {
 
     const limit = options?.limit || 5;
     const table = await this.db.openTable(this.tableName);
+
+    // Read dynamic search config
+    let searchAlgorithm = 'vector';
+    let mmrDiversity = 0.5;
+    try {
+      const configPath = path.join(os.homedir(), '.omnimind', 'search_config.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (config.algorithm) searchAlgorithm = config.algorithm;
+        if (typeof config.mmrDiversity === 'number') mmrDiversity = config.mmrDiversity;
+      }
+    } catch (e) {
+      console.warn("Failed to read search config, falling back to defaults", e);
+    }
+
+    console.log(`[VectorStore] Searching with algorithm: ${searchAlgorithm}`);
+
+    if (searchAlgorithm === 'bm25') {
+      let query = table.search(queryString).fullTextSearch(queryString).limit(limit);
+      if (options?.sourceFilter) query = query.where(`source = '${options.sourceFilter}'`);
+      return (await query.toArray()) as unknown as DocumentChunk[];
+    }
+
+    if (searchAlgorithm === 'hybrid') {
+      // Fetch both and merge using basic score normalization
+      let vQuery = table.search(queryVector).limit(limit * 2);
+      let ftsQuery = table.search(queryString).fullTextSearch(queryString).limit(limit * 2);
+
+      if (options?.sourceFilter) {
+        vQuery = vQuery.where(`source = '${options.sourceFilter}'`);
+        ftsQuery = ftsQuery.where(`source = '${options.sourceFilter}'`);
+      }
+
+      const [vResults, ftsResults] = await Promise.all([vQuery.toArray(), ftsQuery.toArray()]);
+
+      // Simple Reciprocal Rank Fusion
+      const scores = new Map<string, { doc: any, score: number }>();
+      const RRF_K = 60;
+
+      vResults.forEach((doc, idx) => {
+        const id = (doc as any).id;
+        scores.set(id, { doc, score: 1 / (RRF_K + idx + 1) });
+      });
+
+      ftsResults.forEach((doc, idx) => {
+        const id = (doc as any).id;
+        const existing = scores.get(id);
+        if (existing) {
+          existing.score += 1 / (RRF_K + idx + 1);
+        } else {
+          scores.set(id, { doc, score: 1 / (RRF_K + idx + 1) });
+        }
+      });
+
+      const merged = Array.from(scores.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(i => i.doc);
+
+      return merged as unknown as DocumentChunk[];
+    }
+
+    if (searchAlgorithm === 'mmr') {
+      // Fetch 3x results for MMR selection
+      let query = table.search(queryVector).limit(limit * 3);
+      if (options?.sourceFilter) query = query.where(`source = '${options.sourceFilter}'`);
+      const results = await query.toArray();
+
+      if (results.length === 0) return [];
+
+      // MMR Implementation
+      const selected: any[] = [];
+      const unselected = [...results];
+
+      // First select the most relevant
+      selected.push(unselected.shift());
+
+      while (selected.length < limit && unselected.length > 0) {
+        let bestScore = -Infinity;
+        let bestIndex = -1;
+
+        for (let i = 0; i < unselected.length; i++) {
+          const doc = unselected[i];
+          const relevance = this.cosineSimilarity(queryVector, doc.vector as unknown as number[]);
+
+          let maxDiversityPenalty = 0;
+          for (const sDoc of selected) {
+            const similarity = this.cosineSimilarity(doc.vector as unknown as number[], sDoc.vector as unknown as number[]);
+            if (similarity > maxDiversityPenalty) {
+              maxDiversityPenalty = similarity;
+            }
+          }
+
+          const mmrScore = (1 - mmrDiversity) * relevance - mmrDiversity * maxDiversityPenalty;
+
+          if (mmrScore > bestScore) {
+            bestScore = mmrScore;
+            bestIndex = i;
+          }
+        }
+
+        selected.push(unselected[bestIndex]);
+        unselected.splice(bestIndex, 1);
+      }
+
+      return selected as unknown as DocumentChunk[];
+    }
+
+    // Default: Vector Search
     let query = table.search(queryVector).limit(limit);
-    
+
     if (options?.sourceFilter) {
       // Use standard SQL string literal quotes for LanceDB
       query = query.where(`source = '${options.sourceFilter}'`);
@@ -130,14 +263,14 @@ export class VectorStore {
       console.warn("Schema mismatch, returning empty stats.");
       return stats;
     }
-    
+
     const uniquePaths = { obsidian: new Set<string>(), zotero: new Set<string>() };
-    
+
     for (const row of results) {
       if (row.source === 'obsidian') uniquePaths.obsidian.add(row.path as string);
       else if (row.source === 'zotero') uniquePaths.zotero.add(row.path as string);
     }
-    
+
     stats.sources.obsidian = uniquePaths.obsidian.size;
     stats.sources.zotero = uniquePaths.zotero.size;
     return stats;
@@ -155,7 +288,7 @@ export class VectorStore {
       console.warn("Schema mismatch, returning empty sources.");
       return [];
     }
-    
+
     const unique = new Map<string, any>();
     for (const row of results) {
       if (!unique.has(row.path as string)) {

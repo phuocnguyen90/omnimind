@@ -27,7 +27,7 @@ export const searchKnowledgeGraphTool = tool({
       searchOptions.sourceFilter = params.source;
     }
     
-    const retrievedDocs = await vectorStore.search(queryVector, searchOptions);
+    const retrievedDocs = await vectorStore.search(params.query, queryVector, searchOptions);
 
     if (!retrievedDocs || retrievedDocs.length === 0) {
       return JSON.stringify({ message: "No relevant documents found." });

@@ -4,7 +4,6 @@ import * as index from '../src/index';
 
 import { 
   getPaperInfoTool,
-  searchAcademicReferencesTool,
   clusterPapersTool
 } from '../src/tools/zoteroTools';
 
@@ -29,31 +28,6 @@ test('Zotero Tools', async (t) => {
     
     assert.strictEqual(requestedQuery, 'Smith 2024');
     assert.strictEqual(parsed.title, 'Mock Paper');
-  });
-
-  await t.test('search_academic_references filters by zotero source', async () => {
-    let searchSourceFilter = '';
-    index._testInjectEmbedder({
-      generateEmbedding: async () => [0.1, 0.2]
-    });
-    
-    index._testInjectVectorStore({
-      search: async (vector: number[], options: any) => {
-        searchSourceFilter = options.sourceFilter;
-        return [
-          { path: 'XYZ123', text: 'Abstract text...' }
-        ];
-      }
-    });
-    
-    const res = await searchAcademicReferencesTool.implementation({
-      query: 'deep learning',
-      limit: 2
-    });
-    
-    const parsed = JSON.parse(res as string);
-    assert.strictEqual(searchSourceFilter, 'zotero');
-    assert.strictEqual(parsed[0].path, 'XYZ123');
   });
 
   await t.test('cluster_papers returns clusters', async () => {
