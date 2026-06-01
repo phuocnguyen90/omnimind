@@ -1,6 +1,6 @@
 {
   "name": "omnimind",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,9 +27,13 @@
   },
   "gitHead": "d95ce2feb067b4eec446c673155631ee1734e982",
   "devDependencies": {
-    "@types/node": "^22.13.1",
+    "@types/node": "^20.19.41",
     "@types/pdf-parse": "^1.1.5",
     "@types/sql.js": "^1.4.11",
+    "esbuild": "^0.28.0",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
