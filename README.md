@@ -38,11 +38,7 @@ To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 w
 #### 📦 For Users (Recommended)
 1. Download the latest `omnimind-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phuocnguyen90/omnimind/releases) page.
 2. Extract the folder anywhere on your machine.
-3. Open a Terminal or Command Prompt inside the extracted folder.
-4. Run the following command to download the required native database components for your operating system:
-   ```bash
-   npm install
-   ```
+3. **No further setup required!** LM Studio will automatically handle fetching any backend requirements (like LanceDB) for your specific operating system the moment you load the plugin.
 
 #### 🛠️ For Developers
 Want to modify the plugin from source, or build it yourself? 
