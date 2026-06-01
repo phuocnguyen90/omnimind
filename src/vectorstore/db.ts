@@ -120,7 +120,7 @@ export class VectorStore {
   /**
    * Performs advanced search (Vector, BM25, Hybrid, MMR).
    */
-  public async search(queryString: string, queryVector: number[], options?: { sourceFilter?: 'obsidian' | 'zotero', limit?: number }): Promise<DocumentChunk[]> {
+  public async search(queryString: string, queryVector: number[], options?: { sourceFilter?: 'obsidian' | 'zotero', limit?: number, algorithm?: 'vector' | 'bm25' | 'hybrid' | 'mmr' }): Promise<DocumentChunk[]> {
     if (!this.db) throw new Error("Database not initialized");
 
     const tableNames = await this.db.tableNames();
@@ -144,6 +144,11 @@ export class VectorStore {
       }
     } catch (e) {
       console.warn("Failed to read search config, falling back to defaults", e);
+    }
+    
+    // Allow tool override
+    if (options?.algorithm) {
+      searchAlgorithm = options.algorithm;
     }
 
     console.log(`[VectorStore] Searching with algorithm: ${searchAlgorithm}`);
