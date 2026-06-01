@@ -257,10 +257,10 @@ function App() {
               onChange={(e) => saveSettings({ ...searchConfig, algorithm: e.target.value })}
               style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
             >
-              <option value="vector">Standard Vector Similarity (Default)</option>
-              <option value="bm25">BM25 Full-Text Keyword Search (Tantivy)</option>
-              <option value="hybrid">Hybrid Search (Vector + BM25 with Reciprocal Rank Fusion)</option>
-              <option value="mmr">Maximal Marginal Relevance (Vector with Diversity Penalty)</option>
+              <option value="vector" style={{ background: '#1e1e2e', color: 'white' }}>Standard Vector Similarity (Default)</option>
+              <option value="bm25" style={{ background: '#1e1e2e', color: 'white' }}>BM25 Full-Text Keyword Search (Tantivy)</option>
+              <option value="hybrid" style={{ background: '#1e1e2e', color: 'white' }}>Hybrid Search (Vector + BM25 with Reciprocal Rank Fusion)</option>
+              <option value="mmr" style={{ background: '#1e1e2e', color: 'white' }}>Maximal Marginal Relevance (Vector with Diversity Penalty)</option>
             </select>
             
             <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '0.9em', color: 'var(--text-secondary)' }}>
