@@ -3,7 +3,7 @@
     "strict": true,
     "module": "CommonJS",
     "moduleResolution": "node",
-    "target": "ES2021",
+    "target": "ES2024",
     "declaration": true,
     "noImplicitOverride": true,
     "sourceMap": true,
@@ -12,5 +12,6 @@
     "skipLibCheck": true,
     "rootDir": "src",
     "outDir": "dist"
-  }
+  },
+  "exclude": ["ui", "dist", "test_embed.ts", "test_tracker.ts", "lm_studio_big_rag_plugin"]
 }

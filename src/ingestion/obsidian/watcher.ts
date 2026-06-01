@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import chokidar from 'chokidar';
+import chokidar, { FSWatcher } from 'chokidar';
 
 export interface ObsidianNote {
   filePath: string;
@@ -12,7 +12,7 @@ export interface ObsidianNote {
 
 export class ObsidianVaultWatcher {
   private vaultPath: string;
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
 
   constructor(vaultPath: string) {
     this.vaultPath = vaultPath;
@@ -34,7 +34,7 @@ export class ObsidianVaultWatcher {
     this.watcher = chokidar.watch(this.vaultPath, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
-      ignoreInitial: true, // we already did the massive first run, don't re-run on restart
+      ignoreInitial: false, // Must be false to discover all existing notes on startup. Deduplication is handled by syncTracker.
     });
 
     this.watcher

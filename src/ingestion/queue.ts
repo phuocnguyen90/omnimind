@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import PQueue from 'p-queue';
 
 export type JobStatus = 'pending' | 'processing' | 'failed' | 'completed';
 
@@ -22,25 +23,47 @@ export interface JobQueueStats {
 
 export class JobQueue extends EventEmitter {
   private jobs: Map<string, Job> = new Map();
-  private maxConcurrentWorkers: number;
-  private activeWorkers: number = 0;
+  private queue: PQueue;
   private state: 'RUNNING' | 'PAUSED' = 'RUNNING';
 
   constructor(maxConcurrentWorkers: number = 4) {
     super();
-    this.maxConcurrentWorkers = maxConcurrentWorkers;
+    this.queue = new PQueue({ concurrency: maxConcurrentWorkers });
   }
 
   public addJob(job: Omit<Job, 'status' | 'retryCount'>) {
     if (!this.jobs.has(job.id)) {
-      this.jobs.set(job.id, {
+      const fullJob: Job = {
         ...job,
         status: 'pending',
         retryCount: 0
-      });
+      };
+      this.jobs.set(job.id, fullJob);
       this.emit('job_added');
-      this.pump();
+      this.enqueueToPQueue(fullJob);
     }
+  }
+
+  private enqueueToPQueue(job: Job) {
+    this.queue.add(async () => {
+      // Check if paused. PQueue naturally pauses if we call queue.pause(), 
+      // but double check status here just in case.
+      job.status = 'processing';
+      
+      return new Promise<void>((resolve) => {
+        this.emit('process_job', job, (err?: Error) => {
+          if (err) {
+            job.status = 'failed';
+            job.error = err.message;
+            job.retryCount++;
+            console.warn(`[JobQueue] Job failed: ${job.title} - ${err.message}`);
+          } else {
+            job.status = 'completed';
+          }
+          resolve();
+        });
+      });
+    });
   }
 
   public getStats(): JobQueueStats {
@@ -54,15 +77,26 @@ export class JobQueue extends EventEmitter {
     return { total: this.jobs.size, pending, processing, completed, failed };
   }
 
+  public getFailedJobs(): Job[] {
+    const failed: Job[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status === 'failed') {
+        failed.push(job);
+      }
+    }
+    return failed;
+  }
+
   public pause() {
     this.state = 'PAUSED';
+    this.queue.pause();
     console.log("[JobQueue] Paused.");
   }
 
   public resume() {
     this.state = 'RUNNING';
+    this.queue.start();
     console.log("[JobQueue] Resumed.");
-    this.pump();
   }
 
   public getState() {
@@ -70,7 +104,7 @@ export class JobQueue extends EventEmitter {
   }
 
   /**
-   * Resets all failed jobs back to pending.
+   * Resets all failed jobs back to pending and re-adds them to p-queue.
    */
   public retryFailed() {
     let retried = 0;
@@ -78,49 +112,10 @@ export class JobQueue extends EventEmitter {
       if (job.status === 'failed') {
         job.status = 'pending';
         job.error = undefined;
+        this.enqueueToPQueue(job);
         retried++;
       }
     }
     console.log(`[JobQueue] Retrying ${retried} failed jobs.`);
-    if (retried > 0) this.pump();
-  }
-
-  /**
-   * The core pump loop that pulls pending jobs and processes them
-   */
-  private async pump() {
-    if (this.state === 'PAUSED') return;
-    
-    while (this.activeWorkers < this.maxConcurrentWorkers) {
-      const nextJob = this.getNextPendingJob();
-      if (!nextJob) break; // Queue empty or no pending jobs
-
-      this.activeWorkers++;
-      nextJob.status = 'processing';
-      
-      this.emit('process_job', nextJob, async (err?: Error) => {
-        if (err) {
-          nextJob.status = 'failed';
-          nextJob.error = err.message;
-          nextJob.retryCount++;
-          console.warn(`[JobQueue] Job failed: ${nextJob.title} - ${err.message}`);
-        } else {
-          nextJob.status = 'completed';
-        }
-        
-        this.activeWorkers--;
-        // Immediately try to pump another job
-        this.pump();
-      });
-    }
-  }
-
-  private getNextPendingJob(): Job | undefined {
-    for (const job of this.jobs.values()) {
-      if (job.status === 'pending') {
-        return job;
-      }
-    }
-    return undefined;
   }
 }

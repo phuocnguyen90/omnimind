@@ -19,7 +19,7 @@ export class ZoteroDB {
    * Fast discovery phase: Scans the SQLite DB and populates the JobQueue with pending PDFs.
    * Extracts rich metadata (Authors, Year, Title) to perfectly ground LLM embeddings.
    */
-  public async discoverJobs(jobQueue: JobQueue): Promise<void> {
+  public async discoverJobs(jobQueue: JobQueue): Promise<string[]> {
     if (!fs.existsSync(this.dbPath)) {
       throw new Error(`Zotero database not found at ${this.dbPath}`);
     }
@@ -65,7 +65,8 @@ export class ZoteroDB {
       JOIN (
           SELECT parentItemID, MIN(itemID) AS itemID, path
           FROM itemAttachments
-          WHERE contentType = 'application/pdf' AND path LIKE 'storage:%.pdf'
+          WHERE contentType IN ('application/pdf', 'application/epub+zip', 'text/html') 
+            AND path LIKE 'storage:%'
           GROUP BY parentItemID
       ) att ON att.parentItemID = i.itemID
       JOIN items atti ON atti.itemID = att.itemID
@@ -74,10 +75,13 @@ export class ZoteroDB {
       GROUP BY i.itemID
     `;
 
+    const validKeys: string[] = [];
+
     const stmt = db.prepare(query);
     while (stmt.step()) {
       const row = stmt.getAsObject();
       const key = row.storage_key as string;
+      validKeys.push(key);
       const fileName = (row.file_name as string).replace('storage:', '');
       
       // Format the Title as a BibTeX-style citation string
@@ -110,7 +114,8 @@ export class ZoteroDB {
     stmt.free();
     db.close();
     
-    console.log(`[Zotero] Discovery complete. Pending jobs added to queue.`);
+    console.log(`[Zotero] Discovery complete. Pending jobs added to queue. Found ${validKeys.length} valid keys.`);
+    return validKeys;
   }
 
   /**
