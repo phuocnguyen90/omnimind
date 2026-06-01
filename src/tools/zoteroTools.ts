@@ -16,21 +16,6 @@ export const getPaperInfoTool = tool({
   }
 });
 
-export const searchAcademicReferencesTool = tool({
-  name: "search_academic_references",
-  description: "Perform a semantic vector search restricted exclusively to Zotero academic papers. Use this when the user is specifically asking to find academic literature, studies, or papers.",
-  parameters: {
-    query: z.string().describe("The search query."),
-    limit: z.number().optional().describe("Number of results to return (default 5).")
-  },
-  implementation: async (params: any) => {
-    console.log(`[Tool] search_academic_references called with query: ${params.query}`);
-    const limit = params.limit || 5;
-    const queryVector = await embedder.generateEmbedding(params.query);
-    const results = await vectorStore.search(queryVector, { sourceFilter: 'zotero', limit });
-    return JSON.stringify(results.map(r => ({ path: r.path, text: r.text })));
-  }
-});
 
 export const clusterPapersTool = tool({
   name: "cluster_papers",

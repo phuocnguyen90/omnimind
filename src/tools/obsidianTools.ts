@@ -98,21 +98,6 @@ export const editObsidianNoteTool = tool({
   }
 });
 
-export const searchPersonalNotesTool = tool({
-  name: "search_personal_notes",
-  description: "Perform a semantic vector search restricted exclusively to the user's local Obsidian Markdown notes. Use this to find specific personal thoughts, logs, or drafts.",
-  parameters: {
-    query: z.string().describe("The search query."),
-    limit: z.number().optional().describe("Number of results to return (default 5).")
-  },
-  implementation: async (params: any) => {
-    console.log(`[Tool] search_personal_notes called with query: ${params.query}`);
-    const limit = params.limit || 5;
-    const queryVector = await embedder.generateEmbedding(params.query);
-    const results = await vectorStore.search(queryVector, { sourceFilter: 'obsidian', limit });
-    return JSON.stringify(results.map(r => ({ path: r.path, text: r.text, links_to: r.links_to })));
-  }
-});
 
 export const appendObsidianNoteTool = tool({
   name: "append_obsidian_note",
