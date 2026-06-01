@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-06-01
+### 🐛 Bug Fixes
+- **Build Isolation**: Reverted the `ncc` standalone bundler logic. `@lancedb` requires platform-specific native `.node` binaries loaded dynamically. Shipping `node_modules` and utilizing standard `tsc` ensures the plugin doesn't crash on Windows/Mac/Linux with `MODULE_NOT_FOUND` errors for native bindings.
+
 ## [0.2.0] - 2026-06-01
 
 ### 🚀 Features

@@ -1,7 +1,7 @@
 {
   "name": "omnimind",
   "displayName": "OmniMind Knowledge Graph",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Connects LM Studio to Obsidian and Zotero via a LangGraph state machine.",
   "main": "dist/index.js",
   "type": "plugin",
