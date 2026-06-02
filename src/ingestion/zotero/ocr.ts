@@ -1,4 +1,6 @@
 import fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export class ZoteroOCR {
   private lmClient: any;
@@ -88,10 +90,48 @@ export class ZoteroOCR {
 
     let model;
     try {
-      // We grab any loaded model (hopefully a Vision capable model like DeepSeek-OCR)
-      model = await this.lmClient.llm.model(); 
+      const configPath = path.join(os.homedir(), ".omnimind", "search_config.json");
+      let chosenVisionModel: string | undefined;
+      if (fs.existsSync(configPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+          if (config.visionModel) {
+            chosenVisionModel = config.visionModel;
+          }
+        } catch (e) {
+          console.warn("[OCR] Failed to read search_config.json", e);
+        }
+      }
+
+      if (chosenVisionModel) {
+        try {
+          console.log(`[OCR] Loading chosen Vision model: ${chosenVisionModel}`);
+          model = await this.lmClient.llm.model(chosenVisionModel);
+        } catch (err: any) {
+          console.warn(`[OCR] Chosen vision model ${chosenVisionModel} not currently active. Attempting to load...`);
+          try {
+            if (this.lmClient.system && typeof this.lmClient.system.listDownloadedModels === "function") {
+              const downloaded = await this.lmClient.system.listDownloadedModels();
+              const target = downloaded.find((m: any) => m.identifier === chosenVisionModel || m.path === chosenVisionModel);
+              if (target) {
+                console.log(`[OCR] Loading vision model from disk: ${target.path}`);
+                model = await this.lmClient.llm.load(target.path);
+              } else {
+                throw err;
+              }
+            } else {
+              throw err;
+            }
+          } catch (loadErr) {
+            console.error(`[OCR] Failed to load chosen vision model:`, loadErr);
+            throw err;
+          }
+        }
+      } else {
+        model = await this.lmClient.llm.model();
+      }
     } catch (e) {
-      console.warn("[Hybrid OCR] No model loaded in LM Studio! Falling back to raw text.", e);
+      console.warn("[Hybrid OCR] No vision model loaded or available in LM Studio! Falling back to raw text.", e);
       return fullMarkdown;
     }
 

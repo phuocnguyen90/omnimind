@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { JobQueue } from "../ingestion/queue";
 import { VectorStore } from "../vectorstore/db";
+import { lmClient } from "../index";
 
 export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore) {
   if ((global as any).controlServer) {
@@ -47,6 +48,28 @@ export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore)
           const chunks = await vectorStore.getChunksByPath(targetPath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(chunks));
+        } else if (req.method === 'GET' && req.url === '/api/models') {
+          if (!lmClient) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ embeddingModels: [], visionModels: [] }));
+            return;
+          }
+          try {
+            const downloadedModels = await lmClient.system.listDownloadedModels();
+            const embeddingModels = downloadedModels
+              .filter((m: any) => m.type === "embedding")
+              .map((m: any) => ({ identifier: m.identifier, path: m.path }));
+            
+            const visionModels = downloadedModels
+              .filter((m: any) => m.type === "llm")
+              .map((m: any) => ({ identifier: m.identifier, path: m.path }));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ embeddingModels, visionModels }));
+          } catch (err) {
+            console.error("[Control Server] Failed to fetch downloaded models:", err);
+            res.writeHead(500); res.end("Failed to fetch models");
+          }
         } else if (req.method === 'GET' && req.url === '/api/config') {
           const configPath = path.join(os.homedir(), '.omnimind', 'search_config.json');
           if (fs.existsSync(configPath)) {

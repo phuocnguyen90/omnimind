@@ -1,53 +1,189 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { DocumentChunk } from "../vectorstore/db";
 import crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 export class EmbeddingPipeline {
   private client: any; // Using any to bypass strict type for now, it's LMStudioClient
   private embedModelIdentifier: string | undefined;
   private cachedModel: any = null;
+  private workspaceDir: string;
 
-  constructor(client: any, modelIdentifier?: string) {
+  constructor(client: any, modelIdentifier?: string, workspaceDir?: string) {
     this.client = client;
     this.embedModelIdentifier = modelIdentifier;
+    this.workspaceDir = workspaceDir || path.join(os.homedir(), ".omnimind");
   }
 
   /**
-   * Generates an embedding for a single text chunk.
-   * Caches the model instance to prevent spamming LM Studio's getModelInfo endpoint.
+   * Resolves the embedding model. Enforces that the model used for inference
+   * matches the model used during database creation/indexing.
    */
-  public async generateEmbedding(text: string): Promise<number[]> {
+  private async resolveEmbeddingModel(): Promise<any> {
+    if (this.cachedModel) {
+      return this.cachedModel;
+    }
+
     if (!this.client || !this.client.embedding) {
       throw new Error("LM Studio client not fully initialized.");
     }
-    
-    if (!this.cachedModel) {
+
+    const metadataPath = path.join(this.workspaceDir, "embedding_model.json");
+    let savedModelIdentifier: string | undefined;
+    let savedModelPath: string | undefined;
+
+    if (fs.existsSync(metadataPath)) {
       try {
-        this.cachedModel = this.embedModelIdentifier 
-          ? await this.client.embedding.model(this.embedModelIdentifier)
-          : await this.client.embedding.model();
+        const meta = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
+        savedModelIdentifier = meta.identifier;
+        savedModelPath = meta.path;
+      } catch (e) {
+        console.warn("[Embedder] Failed to read embedding_model.json", e);
+      }
+    }
+
+    let modelToLoad: any = null;
+
+    // 1. Try to load/resolve the saved model if database metadata exists
+    if (savedModelIdentifier || savedModelPath) {
+      try {
+        console.log(`[Embedder] Database was built with model: ${savedModelIdentifier || savedModelPath}. Resolving...`);
+        modelToLoad = await this.client.embedding.model(savedModelIdentifier || savedModelPath);
       } catch (err: any) {
-        if (err.title?.includes("No model found") || err.message?.includes("No loaded model satisfies")) {
+        console.warn(`[Embedder] Saved model ${savedModelIdentifier || savedModelPath} not active. Attempting to load from disk...`);
+        try {
+          if (this.client.system && typeof this.client.system.listDownloadedModels === "function") {
+            const downloadedModels = await this.client.system.listDownloadedModels();
+            const target = downloadedModels.find((m: any) => m.identifier === savedModelIdentifier || m.path === savedModelPath);
+            if (target) {
+              console.log(`[Embedder] Loading saved embedding model: ${target.path}`);
+              modelToLoad = await this.client.embedding.load(target.path);
+            }
+          }
+        } catch (loadErr) {
+          console.error(`[Embedder] Failed to load saved embedding model:`, loadErr);
+        }
+      }
+    }
+
+    // 2. If no saved model was loaded, try resolving the model selected in search_config.json
+    let chosenModelFromUI: string | undefined;
+    const configPath = path.join(this.workspaceDir, "search_config.json");
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (config.embeddingModel) {
+          chosenModelFromUI = config.embeddingModel;
+        }
+      } catch (e) {
+        console.warn("[Embedder] Failed to read search_config.json", e);
+      }
+    }
+
+    if (!modelToLoad && chosenModelFromUI) {
+      try {
+        console.log(`[Embedder] Loading chosen model from search_config.json: ${chosenModelFromUI}`);
+        modelToLoad = await this.client.embedding.model(chosenModelFromUI);
+      } catch (err: any) {
+        console.warn(`[Embedder] Chosen model ${chosenModelFromUI} not active. Attempting to load...`);
+        try {
+          if (this.client.system && typeof this.client.system.listDownloadedModels === "function") {
+            const downloadedModels = await this.client.system.listDownloadedModels();
+            const target = downloadedModels.find((m: any) => m.identifier === chosenModelFromUI || m.path === chosenModelFromUI);
+            if (target) {
+              console.log(`[Embedder] Loading chosen embedding model from disk: ${target.path}`);
+              modelToLoad = await this.client.embedding.load(target.path);
+            }
+          }
+        } catch (loadErr) {
+          console.error(`[Embedder] Failed to load chosen embedding model:`, loadErr);
+        }
+      }
+    }
+
+    // 3. If no saved model or chosen model was loaded, try resolving the constructor identifier
+    if (!modelToLoad && this.embedModelIdentifier) {
+      try {
+        modelToLoad = await this.client.embedding.model(this.embedModelIdentifier);
+      } catch (err) {
+        console.warn(`[Embedder] Constructor model identifier ${this.embedModelIdentifier} not found/loaded.`);
+      }
+    }
+
+    // 3. Fallback to active model or auto-load one
+    if (!modelToLoad) {
+      try {
+        modelToLoad = await this.client.embedding.model();
+      } catch (err: any) {
+        if (err.title?.includes("No model found") || err.message?.includes("No loaded model satisfies") || err.message?.includes("No active model")) {
           console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
-          const downloadedModels = await this.client.system.listDownloadedModels();
-          const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
-          
-          if (embeddingModels.length > 0) {
-            const targetModel = embeddingModels[0].path;
-            console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
-            this.cachedModel = await this.client.embedding.load(targetModel);
-            console.log(`[Embedder] Successfully loaded embedding model!`);
+          if (this.client.system && typeof this.client.system.listDownloadedModels === "function") {
+            const downloadedModels = await this.client.system.listDownloadedModels();
+            const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
+            
+            if (embeddingModels.length > 0) {
+              const targetModel = embeddingModels[0].path;
+              console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
+              modelToLoad = await this.client.embedding.load(targetModel);
+              console.log(`[Embedder] Successfully loaded embedding model!`);
+            } else {
+              throw new Error("No embedding models found on disk. Please download one (e.g., embeddinggemma-300m) in LM Studio.");
+            }
           } else {
-            throw new Error("No embedding models found on disk. Please download one (e.g., embeddinggemma-300m) in LM Studio.");
+            throw new Error("No embedding model is loaded. Please load one in LM Studio.");
           }
         } else {
           throw err;
         }
       }
     }
+
+    if (modelToLoad) {
+      const currentIdentifier = modelToLoad.identifier;
+      const currentPath = modelToLoad.path;
       
+      const tablePath = path.join(this.workspaceDir, ".lancedb", "knowledge_graph.lance");
+      const isNewDatabase = !fs.existsSync(tablePath);
+
+      if (savedModelIdentifier && savedModelIdentifier !== currentIdentifier && !isNewDatabase) {
+        throw new Error(
+          `Embedding model mismatch! The database was built with '${savedModelIdentifier}' (or path '${savedModelPath}'), but the active model is '${currentIdentifier}'. ` +
+          `Please load the correct model in LM Studio to prevent corrupted queries. To start fresh with this new model, delete your database files in ${path.join(this.workspaceDir, ".lancedb")}`
+        );
+      }
+
+      // Record/Update metadata if new database or metadata is missing
+      if (!savedModelIdentifier || isNewDatabase) {
+        try {
+          if (!fs.existsSync(this.workspaceDir)) {
+            fs.mkdirSync(this.workspaceDir, { recursive: true });
+          }
+          fs.writeFileSync(metadataPath, JSON.stringify({
+            identifier: currentIdentifier,
+            path: currentPath,
+            timestamp: new Date().toISOString()
+          }, null, 2));
+          console.log(`[Embedder] Saved/Updated embedding model metadata to ${metadataPath}`);
+        } catch (e) {
+          console.warn("[Embedder] Failed to write embedding_model.json", e);
+        }
+      }
+
+      this.cachedModel = modelToLoad;
+    }
+
+    return this.cachedModel;
+  }
+
+  /**
+   * Generates an embedding for a single text chunk.
+   */
+  public async generateEmbedding(text: string): Promise<number[]> {
+    const model = await this.resolveEmbeddingModel();
     try {
-      const embeddingResult = await (this.cachedModel as any).embed(text);
+      const embeddingResult = await (model as any).embed(text);
       return embeddingResult.embedding; 
     } catch (err) {
       this.cachedModel = null;
@@ -97,40 +233,11 @@ export class EmbeddingPipeline {
     links: string[] = [],
     onBatch: (chunks: DocumentChunk[]) => Promise<void>
   ): Promise<number> {
-    // Prepend the title to every chunk. This drastically improves both semantic search 
-    // relevance and gives the LLM context of where the text came from!
     const textChunks = this.chunkText(rawText).map(chunk => `Source: ${title}\n\n${chunk}`);
     const linksString = links.join(",");
     let totalProcessed = 0;
 
-    if (!this.client || !this.client.embedding) {
-      throw new Error("LM Studio client not fully initialized.");
-    }
-
-    if (!this.cachedModel) {
-      try {
-        this.cachedModel = this.embedModelIdentifier 
-          ? await this.client.embedding.model(this.embedModelIdentifier)
-          : await this.client.embedding.model();
-      } catch (err: any) {
-        if (err.title?.includes("No model found") || err.message?.includes("No loaded model satisfies")) {
-          console.warn("[Embedder] No embedding model loaded! Attempting to auto-load one from disk...");
-          const downloadedModels = await this.client.system.listDownloadedModels();
-          const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
-          
-          if (embeddingModels.length > 0) {
-            const targetModel = embeddingModels[0].path;
-            console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
-            this.cachedModel = await this.client.embedding.load(targetModel);
-            console.log(`[Embedder] Successfully loaded embedding model!`);
-          } else {
-            throw new Error("No embedding models found on disk. Please download one (e.g., embeddinggemma-300m) in LM Studio.");
-          }
-        } else {
-          throw err;
-        }
-      }
-    }
+    const model = await this.resolveEmbeddingModel();
 
     // Process in batches of 20 to prevent overwhelming LM Studio API
     const BATCH_SIZE = 20;
@@ -140,7 +247,7 @@ export class EmbeddingPipeline {
       
       let embeddingResults;
       try {
-        embeddingResults = await (this.cachedModel as any).embed(chunkBatch);
+        embeddingResults = await (model as any).embed(chunkBatch);
       } catch (err) {
         this.cachedModel = null;
         throw err;
@@ -150,7 +257,6 @@ export class EmbeddingPipeline {
       
       for (let j = 0; j < chunkBatch.length; j++) {
         const text = chunkBatch[j];
-        // In array embed, LM Studio SDK returns an array of objects
         const vector = embeddingResults[j].embedding;
         
         // Generate deterministic ID

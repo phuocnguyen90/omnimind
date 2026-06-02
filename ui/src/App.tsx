@@ -15,16 +15,27 @@ function App() {
   const [chunks, setChunks] = useState<any[]>([]);
   
   // Settings State
-  const [searchConfig, setSearchConfig] = useState({ algorithm: 'vector', mmrDiversity: 0.5 });
+  const [searchConfig, setSearchConfig] = useState({ algorithm: 'vector', mmrDiversity: 0.5, embeddingModel: '', visionModel: '' });
+  const [availableModels, setAvailableModels] = useState<{ embeddingModels: any[], visionModels: any[] }>({ embeddingModels: [], visionModels: [] });
   const [saveStatus, setSaveStatus] = useState('');
 
   // Load Settings
   useEffect(() => {
     fetch('/api/config')
       .then(res => res.json())
-      .then(setSearchConfig)
+      .then(data => setSearchConfig(prev => ({ ...prev, ...data })))
       .catch(console.error);
   }, []);
+
+  // Load available models when entering settings
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      fetch('/api/models')
+        .then(res => res.json())
+        .then(setAvailableModels)
+        .catch(console.error);
+    }
+  }, [activeTab]);
 
   const saveSettings = async (newConfig: any) => {
     setSearchConfig(newConfig);
@@ -290,6 +301,46 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* Embedding Model Selection */}
+          <div style={{ marginBottom: '30px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '10px' }}>Preferred Embedding Model</label>
+            <select 
+              value={searchConfig.embeddingModel || ''}
+              onChange={(e) => saveSettings({ ...searchConfig, embeddingModel: e.target.value })}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
+            >
+              <option value="" style={{ background: '#1e1e2e', color: 'white' }}>Auto-detect/First available (Default)</option>
+              {availableModels.embeddingModels.map((m: any) => (
+                <option key={m.identifier} value={m.identifier} style={{ background: '#1e1e2e', color: 'white' }}>
+                  {m.identifier} ({m.path.split('/').pop().split('\\').pop()})
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: '5px', fontSize: '0.8em', color: 'var(--text-secondary)' }}>
+              Note: Changing this requires rebuilding/deleting your database if vectors are already indexed with a different model.
+            </div>
+          </div>
+
+          {/* Vision Model Selection */}
+          <div style={{ marginBottom: '30px' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '10px' }}>Preferred Vision/LLM Model (for OCR)</label>
+            <select 
+              value={searchConfig.visionModel || ''}
+              onChange={(e) => saveSettings({ ...searchConfig, visionModel: e.target.value })}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
+            >
+              <option value="" style={{ background: '#1e1e2e', color: 'white' }}>Auto-detect/First loaded (Default)</option>
+              {availableModels.visionModels.map((m: any) => (
+                <option key={m.identifier} value={m.identifier} style={{ background: '#1e1e2e', color: 'white' }}>
+                  {m.identifier} ({m.path.split('/').pop().split('\\').pop()})
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: '5px', fontSize: '0.8em', color: 'var(--text-secondary)' }}>
+              The model that will be used to run OCR on scanned PDFs.
+            </div>
+          </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '40px' }}>
             {saveStatus && <span style={{ color: 'var(--status-running)', marginRight: '15px', fontWeight: 'bold' }}>{saveStatus}</span>}

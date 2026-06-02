@@ -1,6 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [0.4.1] - 2026-06-02
+
+### 🚀 Features
+- **UI Model Configuration**: Exposed select dropdowns for preferred **Embedding Model** and **Vision/LLM Model (for OCR)** in the Settings tab of the control panel UI (port 4733).
+- **Backend Model Discovery**: Implemented a new `/api/models` GET endpoint mapping active downloaded models in LM Studio.
+
+### 🐛 Bug Fixes
+- **Embedding Model Verification**: Enforced matching check between query embedding model and index embedding model, automatically creating/checking `embedding_model.json` database metadata to prevent dimension mismatches and search query corruption.
+- **Vision OCR Model Selection**: Updated OCR processing to respect the user-selected vision model from settings, with automatic download loading and LLM fallback logic.
+
 ## [0.4.0] - 2026-06-01
 
 ### 🚀 Features
