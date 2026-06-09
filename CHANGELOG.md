@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-06-09
+
+### 🚀 Features
+- **Full Document Viewer**: Added ability to view the full text content of Obsidian notes and Zotero PDF/HTML attachments directly in the Knowledge Base Browser.
+- **Search & Filter Sidebar**: Added a search bar to filter the ingested sources list by filename, path, source type, and rich parsed document titles.
+- **Title Extraction**: Automatically parses and extracts rich document titles (e.g. author and year metadata) from LanceDB chunk headers to display in the UI and make searchable.
+- **Ingestion Fallback for Abstracts**: Automatically processes and embeds Zotero entries without PDF attachments by ingesting their abstracts (if available), fallback routing them seamlessly to the vector store.
+- **Startup Sequence Optimizations**: Reordered plugin initialization so the control server UI starts listening before running intensive Zotero databases discovery and Obsidian watcher processes.
+
+### 🐛 Bug Fixes
+- **UI Poll Loop Refreshing**: Resolved a React dependency issue where background polling of ingested sources caused the active full document viewer to continuously reload and show the loading spinner every 2 seconds.
+- **Test Suite Isolation**: Isolated embedding pipeline unit tests to run inside temporary workspace directories, preventing model dimension mismatch errors caused by live database metadata contamination on local developer machines.
+
 ## [0.4.1] - 2026-06-02
 
 ### 🚀 Features
