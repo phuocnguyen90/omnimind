@@ -33,11 +33,13 @@ Additionally, OmniMind brings industry-best retrieval algorithms directly to loc
 ## 🚀 Getting Started
 
 ### 💡 Recommended Models (Quickstart)
-To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060 with 10-12 GB VRAM), we recommend loading the following models simultaneously in LM Studio (ensure "Keep multiple models in memory" is enabled):
+To get the best performance out of OmniMind on a mid-range GPU (e.g., RTX 3060/4070 with 10-12 GB VRAM), we recommend loading the following models simultaneously in LM Studio (ensure "Keep multiple models in memory" is enabled):
 
 1. **Embedding**: `lmstudio-community/embeddinggemma-300m-qat-GGUF` (Lightweight and highly accurate)
 2. **Vision / OCR**: `ggml-org/DeepSeek-OCR-GGUF/DeepSeek-OCR-Q8_0.gguf` (~4 GB, fantastic for extracting raw text from scanned PDFs)
-3. **Inference / Chat**: `ibm/granite-4-h-tiny` (~4 GB, fast reasoning for RAG synthesis)
+3. **Inference / Chat**:
+   - **Ultra-Fast (Tiny)**: `ibm/granite-4-h-tiny` (~4 GB, fast reasoning for RAG synthesis)
+   - **Highly Recommended (Advanced RAG)**: `google/gemma-4-12b-qat` (Released June 6, 2026. While this model natively supports 128k+ context windows, due to local VRAM limitations, it is highly recommended to configure it in LM Studio with a **16k - 24k context KV cache** to ensure it fits entirely inside VRAM for maximum speed).
 
 ### Prerequisites
 
@@ -75,7 +77,7 @@ Ensure the following paths are set correctly for your system:
 2. **Select your models**:
     * Embedding: `lmstudio-community/embeddinggemma-300m-qat-GGUF`
     * Vision/OCR: `ggml-org/DeepSeek-OCR-GGUF/DeepSeek-OCR-Q8_0.gguf`
-    * Inference: `ibm/granite-4-h-tiny`
+    * Inference: `google/gemma-4-12b-qat` (Recommended, configured with 16k-24k context) or `ibm/granite-4-h-tiny`
 3. **Enable Tools**: Open a Chat window. On the right sidebar, ensure **"Tools"** is toggled **ON** and the OmniMind tool is checked.
 4. Send your first message! The ingestion engine will kick off automatically in the background.
 
