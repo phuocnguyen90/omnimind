@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-06-09
+
+### ⚠️ Breaking Changes
+- **Embedding Database Schema Upgrade**: Upgraded the LanceDB chunk schema to include a `model` column. Old databases will trigger a model mismatch warning/error and must be re-indexed using the new "Re-embed All Documents" action.
+
+### 🚀 Features
+- **Intelligent Embedding Mismatch Validation**: Added active model verification when executing search queries. If any database chunks mismatch the active model, the query aborts with a descriptive error to prevent garbage similarity scores.
+- **Unified Re-embedding Pipeline**: Added a "Re-embed All Documents" background task accessible via the API and Control Panel settings page. This drops the table and re-indexes all files using the active embedding model.
+- **OCR Text Reuse**: The re-embedding worker intelligently reads from local OCR cache files (`ocr_cache/${key}.md`) for Zotero PDFs. This completely skips running expensive Vision LLM OCR from scratch on existing documents.
+- **Dynamic OCR Fallback Loading**: The Zotero OCR module will now search downloaded models on disk and auto-load `DeepSeek-OCR` or any ocr/vision-capable LLM if no LLM is currently running in LM Studio.
+- **Default Fallback Model Prioritization**: When resolving embedding models without explicit search config, the system now prioritizes loading `embeddinggemma-300m-qat-GGUF` if it is present in the downloaded models folder.
+- **Verbose Startup Sequence Logging**: Replaced generic logs with step-by-step debug logging at each stage of registration, schematics setup, and LM Studio server activation.
+
 ## [0.4.2] - 2026-06-09
 
 ### 🚀 Features

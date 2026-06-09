@@ -65,5 +65,6 @@ test('EmbeddingPipeline', async (t) => {
     assert.strictEqual(firstChunk.path, 'path/to/file.md');
     assert.deepStrictEqual(firstChunk.vector, [0.1, 0.2, 0.3]);
     assert.strictEqual(firstChunk.text.startsWith('Source: Test Doc\n\n'), true);
+    assert.strictEqual(firstChunk.model, 'mock-model');
   });
 });

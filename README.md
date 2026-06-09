@@ -2,6 +2,9 @@
 
 OmniMind is a powerful local-first Retrieval-Augmented Generation (RAG) plugin built on top of [LM Studio](https://lmstudio.ai/). It acts as a bridge between your local LLMs and your personal knowledge base, seamlessly ingesting your **Obsidian Vault** and **Zotero Library** into a local vector database for instant, private semantic search and chat.
 
+> [!WARNING]
+> **Breaking Change (v0.5.0)**: The database schema has been upgraded to track embedding models at the chunk level. If you are upgrading from v0.4.2 or earlier, your existing database will raise an embedding model mismatch error. Please run the **Re-embed All Documents** function in the Search Settings / Control Panel tab or delete the `.omnimind/.lancedb` directory to re-index your documents.
+
 ---
 
 ## 🎯 Why This Project Exists

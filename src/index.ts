@@ -30,6 +30,8 @@ export function _testInjectObsidianVaultPath(p: string) { activeObsidianVaultPat
 export function _testInjectEmbedder(e: any) { embedder = e; }
 export function _testInjectVectorStore(v: any) { vectorStore = v; }
 export function _testInjectZoteroExtractor(z: any) { zoteroExtractor = z; }
+export function _testInjectSyncTracker(s: any) { syncTracker = s; }
+export function _testInjectObsidianWatcher(o: any) { obsidianWatcher = o; }
 
 // LM Studio plugin entry point
 export async function main(context: any) {
@@ -40,19 +42,24 @@ export async function main(context: any) {
   await vectorStore.initialize();
   console.log("Vector Store initialized successfully!");
   
+  console.log("[Startup] Loading SyncTracker...");
   syncTracker = new SyncTracker(workspaceDir);
+  console.log("[Startup] SyncTracker loaded successfully.");
 
   // Register the configuration schematics with LM Studio
   if (context && context.withGlobalConfigSchematics) {
+    console.log("[Startup] Registering configuration schematics...");
     context.withGlobalConfigSchematics(globalConfigSchematics);
+    console.log("[Startup] Configuration schematics registered successfully.");
   }
 
   let isInitialized = false;
 
   // Register the tool provider so it shows up in LM Studio's chat UI
   if (context && context.withToolsProvider) {
+    console.log("[Startup] Registering tools provider with LM Studio...");
     context.withToolsProvider(async (controller: any) => {
-      console.log("Successfully grabbed LMStudioClient from withToolsProvider!");
+      console.log("[Startup] withToolsProvider callback triggered! LM Studio client has connected to the plugin.");
       lmClient = controller.client; // Save globally for LangGraph to use!
       
       // Initialize embedder with the injected client from the controller
@@ -113,12 +120,16 @@ export async function main(context: any) {
         zoteroExtractor = new ZoteroExtractor(zoteroDbPath, zoteroStoragePath, lmClient, syncTracker);
 
         // Launch the control server and then begin execution
+        console.log("[Startup] Launching Control Panel server, watchers, and queue processing...");
         startControlServer(jobQueue, vectorStore).then(() => {
-          console.log("Started watching Obsidian vault:", vaultPath);
-          console.log("Starting Zotero database extraction:", zoteroDbPath);
+          console.log("[Startup] Control Panel running at http://localhost:4733");
+          console.log("[Startup] Watching Obsidian vault:", vaultPath);
+          console.log("[Startup] Reading Zotero database:", zoteroDbPath);
 
           // Instantly populate the Queue with Pending Jobs
+          console.log("[Startup] Discovering Zotero ingestion jobs...");
           zoteroExtractor.discoverJobs(jobQueue).then(async (validKeys: string[]) => {
+            console.log(`[Startup] Discovered ${validKeys.length} items in Zotero DB.`);
             const validKeySet = new Set(validKeys);
             const trackedKeys = syncTracker.getAllZoteroKeys();
             
@@ -173,9 +184,11 @@ export async function main(context: any) {
 
       
       // LM Studio expects an array of tools to map over
+      console.log("[Startup] Tool definitions mapping complete.");
       return toolsProvider.tools;
     });
     console.log("Registered knowledge graph search tool!");
+    console.log("[Startup] Tools registered with LM Studio. Awaiting chat session connection to activate control server and watch handlers...");
     
     // Automated test is available via export, but we disable the auto-run 
     // so it doesn't fire before LM Studio connects to the plugin!

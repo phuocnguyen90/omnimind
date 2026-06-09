@@ -22,8 +22,9 @@ export const searchKnowledgeGraphTool = tool({
 
     const limit = Math.min(params.limit || 5, 10);
     const queryVector = await embedder.generateEmbedding(params.query);
+    const activeModelId = embedder.getActiveModelIdentifier();
     
-    const searchOptions: any = { limit };
+    const searchOptions: any = { limit, activeModelId };
     if (params.source === 'obsidian' || params.source === 'zotero') {
       searchOptions.sourceFilter = params.source;
     }

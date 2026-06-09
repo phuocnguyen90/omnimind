@@ -18,10 +18,17 @@ export class EmbeddingPipeline {
   }
 
   /**
+   * Returns the identifier of the currently loaded embedding model.
+   */
+  public getActiveModelIdentifier(): string | undefined {
+    return this.cachedModel?.identifier;
+  }
+
+  /**
    * Resolves the embedding model. Enforces that the model used for inference
    * matches the model used during database creation/indexing.
    */
-  private async resolveEmbeddingModel(): Promise<any> {
+  public async resolveEmbeddingModel(): Promise<any> {
     if (this.cachedModel) {
       return this.cachedModel;
     }
@@ -112,7 +119,31 @@ export class EmbeddingPipeline {
       }
     }
 
-    // 3. Fallback to active model or auto-load one
+    // 4. Try to load/resolve the default 'embeddinggemma-300m-qat-GGUF' if downloaded
+    if (!modelToLoad) {
+      try {
+        if (this.client.system && typeof this.client.system.listDownloadedModels === "function") {
+          const downloadedModels = await this.client.system.listDownloadedModels();
+          const target = downloadedModels.find((m: any) => 
+            m.identifier?.includes('embeddinggemma-300m-qat-GGUF') || 
+            m.path?.includes('embeddinggemma-300m-qat-GGUF')
+          );
+          if (target) {
+            try {
+              console.log(`[Embedder] Attempting to resolve preferred default model: ${target.identifier || target.path}`);
+              modelToLoad = await this.client.embedding.model(target.identifier || target.path);
+            } catch (err) {
+              console.log(`[Embedder] Preferred default model not active. Loading from disk: ${target.path}`);
+              modelToLoad = await this.client.embedding.load(target.path);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Embedder] Failed to resolve preferred default model embeddinggemma-300m-qat-GGUF:", err);
+      }
+    }
+
+    // 5. Fallback to active model or auto-load one from disk
     if (!modelToLoad) {
       try {
         modelToLoad = await this.client.embedding.model();
@@ -124,7 +155,11 @@ export class EmbeddingPipeline {
             const embeddingModels = downloadedModels.filter((m: any) => m.type === "embedding");
             
             if (embeddingModels.length > 0) {
-              const targetModel = embeddingModels[0].path;
+              const preferred = embeddingModels.find((m: any) => 
+                m.identifier?.includes('embeddinggemma-300m-qat-GGUF') || 
+                m.path?.includes('embeddinggemma-300m-qat-GGUF')
+              );
+              const targetModel = preferred ? preferred.path : embeddingModels[0].path;
               console.log(`[Embedder] Auto-loading embedding model: ${targetModel}`);
               modelToLoad = await this.client.embedding.load(targetModel);
               console.log(`[Embedder] Successfully loaded embedding model!`);
@@ -238,6 +273,7 @@ export class EmbeddingPipeline {
     let totalProcessed = 0;
 
     const model = await this.resolveEmbeddingModel();
+    const modelId = model.identifier;
 
     // Process in batches of 20 to prevent overwhelming LM Studio API
     const BATCH_SIZE = 20;
@@ -268,7 +304,8 @@ export class EmbeddingPipeline {
           source,
           path,
           text,
-          links_to: linksString
+          links_to: linksString,
+          model: modelId
         });
       }
 

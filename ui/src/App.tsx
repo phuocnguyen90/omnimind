@@ -6,7 +6,14 @@ function App() {
   const [activeTab, setActiveTab] = useState<'queue' | 'knowledge' | 'settings'>('queue');
   
   // Queue State
-  const [status, setStatus] = useState({ state: 'LOADING', stats: { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 } });
+  const [status, setStatus] = useState<any>({ 
+    state: 'LOADING', 
+    stats: { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 },
+    embeddingModelStatus: { mismatch: false, savedModel: '', activeModel: '', error: '' }
+  });
+  
+  // Re-embedding State
+  const [reembedProgress, setReembedProgress] = useState<any>(null);
   
   // Knowledge State
   const [knowledgeStats, setKnowledgeStats] = useState({ totalChunks: 0, sources: { obsidian: 0, zotero: 0 } });
@@ -31,6 +38,41 @@ function App() {
       .then(data => setSearchConfig(prev => ({ ...prev, ...data })))
       .catch(console.error);
   }, []);
+
+  // Poll re-embedding progress
+  useEffect(() => {
+    let interval: any;
+    if (reembedProgress?.inProgress) {
+      const fetchReembedStatus = () => {
+        fetch('/api/knowledge/reembed/status')
+          .then(res => res.json())
+          .then(data => {
+            setReembedProgress(data);
+            if (!data.inProgress) {
+              setTimeout(() => setReembedProgress(null), 3000);
+            }
+          })
+          .catch(console.error);
+      };
+      
+      fetchReembedStatus();
+      interval = setInterval(fetchReembedStatus, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [reembedProgress?.inProgress]);
+
+  const triggerReembed = async () => {
+    if (window.confirm("Are you sure you want to re-embed all documents? This will clear the current vector database and rebuild it using the active embedding model. Existing OCR content will be reused.")) {
+      setReembedProgress({ inProgress: true, statusText: "Triggering re-embedding...", succeededCount: 0, failedCount: 0, totalCount: 0 });
+      try {
+        await fetch('/api/knowledge/reembed', { method: 'POST' });
+      } catch (err) {
+        console.error(err);
+        setReembedProgress(null);
+        alert("Failed to start re-embedding.");
+      }
+    }
+  };
 
   // Load available models when entering settings
   useEffect(() => {
@@ -159,6 +201,53 @@ function App() {
           {status.state}
         </div>
       </header>
+
+      {status.embeddingModelStatus?.mismatch && (
+        <div className="glass-panel" style={{ margin: '0 20px 20px 20px', padding: '15px 20px', borderLeft: '5px solid var(--status-failed)', background: 'rgba(235, 94, 85, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>⚠️</span>
+            <div style={{ textAlign: 'left' }}>
+              <strong style={{ color: 'var(--status-failed)', fontSize: '1.05em' }}>Embedding Model Mismatch Detected!</strong>
+              <div style={{ fontSize: '0.9em', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {status.embeddingModelStatus.error || `Database model does not match active embedding model.`}
+              </div>
+            </div>
+          </div>
+          <button className="btn btn-retry" style={{ margin: 0, whiteSpace: 'nowrap', padding: '8px 16px', background: 'rgba(235, 94, 85, 0.2)', border: '1px solid var(--status-failed)' }} onClick={triggerReembed}>
+            Re-embed All Documents
+          </button>
+        </div>
+      )}
+
+      {reembedProgress && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="glass-panel" style={{ width: '450px', padding: '30px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <h3 style={{ margin: '0 0 15px 0', fontSize: '1.3em', color: 'var(--accent-primary)' }}>Re-embedding In Progress</h3>
+            <div className="doc-loading-spinner" style={{ margin: '0 auto 20px auto', width: '40px', height: '40px', borderWidth: '3px' }} />
+            <p style={{ fontWeight: 'bold', fontSize: '1.05em', marginBottom: '10px' }}>{reembedProgress.statusText}</p>
+            {reembedProgress.totalCount > 0 && (
+              <div style={{ margin: '15px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                  <span>Progress: {reembedProgress.succeededCount + reembedProgress.failedCount} / {reembedProgress.totalCount}</span>
+                  <span>{Math.round(((reembedProgress.succeededCount + reembedProgress.failedCount) / reembedProgress.totalCount) * 100)}%</span>
+                </div>
+                <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${((reembedProgress.succeededCount + reembedProgress.failedCount) / reembedProgress.totalCount) * 100}%`, height: '100%', background: 'var(--accent-primary)', transition: 'width 0.3s ease' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '15px', fontSize: '0.9em' }}>
+                  <span style={{ color: 'var(--status-running)' }}>Succeeded: {reembedProgress.succeededCount}</span>
+                  <span style={{ color: 'var(--status-failed)' }}>Failed: {reembedProgress.failedCount}</span>
+                </div>
+              </div>
+            )}
+            {!reembedProgress.inProgress && (
+              <button className="btn btn-resume" style={{ marginTop: '10px', width: '100%' }} onClick={() => setReembedProgress(null)}>
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="tabs">
         <button 
@@ -410,6 +499,12 @@ function App() {
             </select>
             <div style={{ marginTop: '5px', fontSize: '0.8em', color: 'var(--text-secondary)' }}>
               Note: Changing this requires rebuilding/deleting your database if vectors are already indexed with a different model.
+            </div>
+            <div style={{ marginTop: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <span style={{ fontSize: '0.9em', color: 'var(--text-secondary)', textAlign: 'left' }}>Synchronize existing documents with the active embedding model:</span>
+              <button className="btn btn-retry" style={{ margin: 0, padding: '8px 16px' }} onClick={triggerReembed}>
+                Re-embed All Documents
+              </button>
             </div>
           </div>
 

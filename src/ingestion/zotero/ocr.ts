@@ -88,7 +88,7 @@ export class ZoteroOCR {
 
     const systemPrompt = "You are an advanced academic OCR system. Convert this PDF page to exact Markdown. Preserve all headers, tables, mathematical equations (as LaTeX), and text. Do not add any conversational text or formatting outside of the actual document content.";
 
-    let model;
+    let model: any = null;
     try {
       const configPath = path.join(os.homedir(), ".omnimind", "search_config.json");
       let chosenVisionModel: string | undefined;
@@ -103,35 +103,65 @@ export class ZoteroOCR {
         }
       }
 
+      // 1. Try resolving chosen vision model from config
       if (chosenVisionModel) {
         try {
-          console.log(`[OCR] Loading chosen Vision model: ${chosenVisionModel}`);
+          console.log(`[OCR] Attempting to get active chosen Vision model: ${chosenVisionModel}`);
           model = await this.lmClient.llm.model(chosenVisionModel);
-        } catch (err: any) {
-          console.warn(`[OCR] Chosen vision model ${chosenVisionModel} not currently active. Attempting to load...`);
+        } catch (err) {
+          console.warn(`[OCR] Chosen vision model ${chosenVisionModel} not currently active. Trying to load from disk...`);
           try {
             if (this.lmClient.system && typeof this.lmClient.system.listDownloadedModels === "function") {
               const downloaded = await this.lmClient.system.listDownloadedModels();
               const target = downloaded.find((m: any) => m.identifier === chosenVisionModel || m.path === chosenVisionModel);
               if (target) {
-                console.log(`[OCR] Loading vision model from disk: ${target.path}`);
+                console.log(`[OCR] Loading chosen vision model from disk: ${target.path}`);
                 model = await this.lmClient.llm.load(target.path);
-              } else {
-                throw err;
               }
-            } else {
-              throw err;
             }
           } catch (loadErr) {
-            console.error(`[OCR] Failed to load chosen vision model:`, loadErr);
-            throw err;
+            console.error(`[OCR] Failed to load chosen vision model from disk:`, loadErr);
           }
         }
-      } else {
-        model = await this.lmClient.llm.model();
+      }
+
+      // 2. Try resolving any active LLM model if chosen model is not loaded
+      if (!model) {
+        try {
+          model = await this.lmClient.llm.model();
+        } catch (err) {
+          console.warn("[OCR] No active LLM model found in LM Studio.");
+        }
+      }
+
+      // 3. Try to auto-load DeepSeek-OCR or any downloaded ocr/vision LLM from disk
+      if (!model) {
+        try {
+          if (this.lmClient.system && typeof this.lmClient.system.listDownloadedModels === "function") {
+            const downloaded = await this.lmClient.system.listDownloadedModels();
+            const llmModels = downloaded.filter((m: any) => m.type === "llm");
+            if (llmModels.length > 0) {
+              const preferred = llmModels.find((m: any) => 
+                m.identifier?.toLowerCase().includes("ocr") ||
+                m.path?.toLowerCase().includes("ocr") ||
+                m.identifier?.toLowerCase().includes("vision") ||
+                m.path?.toLowerCase().includes("vision")
+              );
+              const target = preferred || llmModels[0];
+              console.log(`[OCR] Auto-loading fallback LLM model from disk: ${target.path}`);
+              model = await this.lmClient.llm.load(target.path);
+            }
+          }
+        } catch (err) {
+          console.error("[OCR] Failed to auto-load fallback LLM model from disk:", err);
+        }
       }
     } catch (e) {
-      console.warn("[Hybrid OCR] No vision model loaded or available in LM Studio! Falling back to raw text.", e);
+      console.warn("[Hybrid OCR] Exception during vision model resolution:", e);
+    }
+
+    if (!model) {
+      console.warn("[Hybrid OCR] No vision model loaded or available in LM Studio! Falling back to raw text.");
       return fullMarkdown;
     }
 

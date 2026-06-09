@@ -145,4 +145,11 @@ export class ZoteroExtractor {
       textContent,
     };
   }
+
+  /**
+   * Retrieves single item payload details using its key.
+   */
+  public async getPayloadByKey(key: string): Promise<any | null> {
+    return this.zoteroDB.getItemPayloadByKey(key);
+  }
 }

@@ -32,7 +32,8 @@ test('Zotero Tools', async (t) => {
 
   await t.test('cluster_papers returns clusters', async () => {
     index._testInjectEmbedder({
-      generateEmbedding: async () => [0.1, 0.2]
+      generateEmbedding: async () => [0.1, 0.2],
+      getActiveModelIdentifier: () => 'mock-model'
     });
     
     index._testInjectVectorStore({
