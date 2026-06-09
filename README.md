@@ -72,10 +72,12 @@ Ensure the following paths are set correctly for your system:
 ### Loading into LM Studio
 
 1. Open LM Studio.
-2. **Enable Multiple Models**: Go to Settings and ensure **"Keep multiple models in memory"** is enabled so you can run Embedding, Vision, and Chat models concurrently.
-3. **Load the Plugin**: Navigate to the Developer / Plugins tab, click **"Load Plugin"**, and select the extracted `omnimind-plugin` folder.
-4. **Enable Tools**: Open a Chat window. On the right sidebar, ensure **"Tools"** is toggled **ON** and the OmniMind tool is checked.
-5. Send your first message! The ingestion engine will kick off automatically in the background.
+2. **Select your models**:
+    * Embedding: `lmstudio-community/embeddinggemma-300m-qat-GGUF`
+    * Vision/OCR: `ggml-org/DeepSeek-OCR-GGUF/DeepSeek-OCR-Q8_0.gguf`
+    * Inference: `ibm/granite-4-h-tiny`
+3. **Enable Tools**: Open a Chat window. On the right sidebar, ensure **"Tools"** is toggled **ON** and the OmniMind tool is checked.
+4. Send your first message! The ingestion engine will kick off automatically in the background.
 
 ---
 

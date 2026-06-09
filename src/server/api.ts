@@ -6,12 +6,13 @@ import { JobQueue } from "../ingestion/queue";
 import { VectorStore } from "../vectorstore/db";
 import { lmClient } from "../index";
 
-export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore) {
+export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore): Promise<void> {
   if ((global as any).controlServer) {
     try { (global as any).controlServer.close(); } catch (e) {}
   }
   
-  const server = http.createServer(async (req, res) => {
+  return new Promise<void>((resolve) => {
+    const server = http.createServer(async (req, res) => {
     try {
       // Handle API routes
       if (req.url?.startsWith('/api/')) {
@@ -48,6 +49,41 @@ export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore)
           const chunks = await vectorStore.getChunksByPath(targetPath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(chunks));
+        } else if (req.method === 'GET' && req.url.startsWith('/api/knowledge/document?')) {
+          const urlPath = new URL(req.url, 'http://localhost');
+          const targetPath = urlPath.searchParams.get('path');
+          const source = urlPath.searchParams.get('source');
+          if (!targetPath) {
+            res.writeHead(400); res.end('Missing path param');
+            return;
+          }
+          try {
+            let content = '';
+            if (source === 'obsidian') {
+              if (fs.existsSync(targetPath)) {
+                content = fs.readFileSync(targetPath, 'utf-8');
+              } else {
+                const chunks = await vectorStore.getChunksByPath(targetPath);
+                content = chunks.map(c => c.text).join('\n\n');
+              }
+            } else if (source === 'zotero') {
+              const cachePath = path.join(os.homedir(), '.omnimind', 'ocr_cache', `${targetPath}.md`);
+              if (fs.existsSync(cachePath)) {
+                content = fs.readFileSync(cachePath, 'utf-8');
+              } else {
+                const chunks = await vectorStore.getChunksByPath(targetPath);
+                content = chunks.map(c => c.text).join('\n\n');
+              }
+            } else {
+              const chunks = await vectorStore.getChunksByPath(targetPath);
+              content = chunks.map(c => c.text).join('\n\n');
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ content }));
+          } catch (err: any) {
+            console.error("[Control Server] Failed to fetch document:", err);
+            res.writeHead(500); res.end("Failed to fetch document");
+          }
         } else if (req.method === 'GET' && req.url === '/api/models') {
           if (!lmClient) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -145,13 +181,17 @@ export function startControlServer(jobQueue: JobQueue, vectorStore: VectorStore)
   server.on('error', (e: any) => {
     if (e.code === 'EADDRINUSE') {
       console.warn("[Control Server] Port 4733 is in use, assuming server is already running.");
+      resolve();
     } else {
       console.error("[Control Server] Server error:", e);
+      resolve();
     }
   });
 
   server.listen(4733, () => {
     console.log("OmniMind Control Panel running at http://localhost:4733");
+    resolve();
   });
   (global as any).controlServer = server;
+  });
 }

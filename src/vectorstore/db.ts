@@ -330,7 +330,7 @@ export class VectorStore {
     const table = await this.db.openTable(this.tableName);
     let results: any[] = [];
     try {
-      results = await table.query().select(['source', 'path']).limit(100000).toArray();
+      results = await table.query().select(['source', 'path', 'text']).limit(100000).toArray();
     } catch (e) {
       console.warn("Schema mismatch, returning empty sources.");
       return [];
@@ -339,7 +339,15 @@ export class VectorStore {
     const unique = new Map<string, any>();
     for (const row of results) {
       if (!unique.has(row.path as string)) {
-        unique.set(row.path as string, { path: row.path, source: row.source });
+        const text = row.text as string || '';
+        const titleMatch = text.match(/^Source:\s*([\s\S]+?)\n\n/);
+        const title = titleMatch ? titleMatch[1].trim() : (row.path as string).split(/\\|\//).pop() || '';
+        
+        unique.set(row.path as string, { 
+          path: row.path, 
+          source: row.source,
+          title: title
+        });
       }
     }
     return Array.from(unique.values());

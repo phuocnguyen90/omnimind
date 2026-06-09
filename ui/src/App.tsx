@@ -12,7 +12,12 @@ function App() {
   const [knowledgeStats, setKnowledgeStats] = useState({ totalChunks: 0, sources: { obsidian: 0, zotero: 0 } });
   const [sources, setSources] = useState<any[]>([]);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [selectedSourceType, setSelectedSourceType] = useState<'obsidian' | 'zotero' | null>(null);
   const [chunks, setChunks] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<'chunks' | 'doc'>('chunks');
+  const [docContent, setDocContent] = useState<string | null>(null);
+  const [isDocLoading, setIsDocLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Settings State
   const [searchConfig, setSearchConfig] = useState({ algorithm: 'vector', mmrDiversity: 0.5, embeddingModel: '', visionModel: '' });
@@ -99,9 +104,51 @@ function App() {
     }
   }, [selectedSource]);
 
+  // Reset doc content when source changes to prevent flickering
+  useEffect(() => {
+    setDocContent(null);
+    if (!selectedSource) {
+      setSelectedSourceType(null);
+    }
+  }, [selectedSource]);
+
+  // Fetch Full Document content when selectedSource or viewMode changes
+  useEffect(() => {
+    if (selectedSource && viewMode === 'doc') {
+      setIsDocLoading(true);
+      
+      fetch(`/api/knowledge/document?path=${encodeURIComponent(selectedSource)}&source=${selectedSourceType || ''}`)
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch document');
+          return res.json();
+        })
+        .then(data => {
+          setDocContent(data.content);
+          setIsDocLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setDocContent('Error loading document content.');
+          setIsDocLoading(false);
+        });
+    } else {
+      setDocContent(null);
+    }
+  }, [selectedSource, viewMode, selectedSourceType]);
+
   const controlQueue = (action: 'pause' | 'resume' | 'retry') => {
     fetch(`/api/${action}`, { method: 'POST' }).catch(console.error);
   };
+
+  const filteredSources = sources.filter(source => {
+    const name = source.path.split(/\\|\//).pop() || '';
+    const title = source.title || '';
+    const query = searchQuery.toLowerCase();
+    return name.toLowerCase().includes(query) || 
+           title.toLowerCase().includes(query) ||
+           source.path.toLowerCase().includes(query) ||
+           source.source.toLowerCase().includes(query);
+  });
 
   return (
     <div className="app-container">
@@ -197,27 +244,39 @@ function App() {
               <div className="source-header">
                 <Database size={18} /> Ingested Sources
               </div>
+              <div className="search-filter-container">
+                <input 
+                  type="text" 
+                  className="search-filter-input" 
+                  placeholder="Filter by name, path or type..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
               <div className="source-items">
-                {sources.map(source => (
+                {filteredSources.map(source => (
                   <div 
                     key={source.path} 
                     className={`source-item ${selectedSource === source.path ? 'active' : ''}`}
-                    onClick={() => setSelectedSource(source.path)}
+                    onClick={() => {
+                      setSelectedSource(source.path);
+                      setSelectedSourceType(source.source);
+                    }}
                   >
                     <div className="source-icon">
                       {source.source === 'obsidian' ? <FileText size={16} /> : <BookOpen size={16} />}
                     </div>
                     <div className="source-content">
                       <div className="source-name" title={source.path}>
-                        {source.path.split(/\\|\//).pop()}
+                        {source.title || source.path.split(/\\|\//).pop()}
                       </div>
                       <div className="source-type">{source.source}</div>
                     </div>
                   </div>
                 ))}
-                {sources.length === 0 && (
+                {filteredSources.length === 0 && (
                   <div className="empty-state">
-                    No sources ingested yet.
+                    {sources.length === 0 ? "No sources ingested yet." : "No matching sources found."}
                   </div>
                 )}
               </div>
@@ -226,17 +285,49 @@ function App() {
             <div className="chunks-view">
               {selectedSource ? (
                 <>
-                  <div className="chunks-header">
-                    Text Chunks ({chunks.length})
+                  <div className="chunks-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      {viewMode === 'chunks' ? `Text Chunks (${chunks.length})` : 'Full Document'}
+                    </div>
+                    <div className="view-toggle-container">
+                      <button 
+                        className={`view-toggle-btn ${viewMode === 'chunks' ? 'active' : ''}`}
+                        onClick={() => setViewMode('chunks')}
+                      >
+                        Chunks
+                      </button>
+                      <button 
+                        className={`view-toggle-btn ${viewMode === 'doc' ? 'active' : ''}`}
+                        onClick={() => setViewMode('doc')}
+                      >
+                        Full Document
+                      </button>
+                    </div>
                   </div>
-                  <div className="chunks-list">
-                    {chunks.map(chunk => (
-                      <div key={chunk.id} className="chunk-card">
-                        <div className="chunk-id">ID: {chunk.id}</div>
-                        <div className="chunk-text">{chunk.text}</div>
-                      </div>
-                    ))}
-                  </div>
+                  
+                  {viewMode === 'chunks' ? (
+                    <div className="chunks-list">
+                      {chunks.map(chunk => (
+                        <div key={chunk.id} className="chunk-card">
+                          <div className="chunk-id">ID: {chunk.id}</div>
+                          <div className="chunk-text">{chunk.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="doc-view-container">
+                      {isDocLoading ? (
+                        <div className="doc-loading">
+                          <div className="doc-loading-spinner" />
+                          <span>Loading document content...</span>
+                        </div>
+                      ) : (
+                        <div className="doc-content-wrapper">
+                          <div className="doc-text">{docContent || 'No document content available.'}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="empty-state">

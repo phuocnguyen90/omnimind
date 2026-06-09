@@ -29,7 +29,7 @@ export class ZoteroDB {
     const db = new SQL.Database(filebuffer);
 
     // 1. Resolve Zotero dynamic field IDs
-    const fieldQuery = `SELECT fieldName, fieldID FROM fields WHERE fieldName IN ('title','date')`;
+    const fieldQuery = `SELECT fieldName, fieldID FROM fields WHERE fieldName IN ('title','date','abstractNote')`;
     const fStmt = db.prepare(fieldQuery);
     const fids: Record<string, number> = {};
     while (fStmt.step()) {
@@ -46,13 +46,14 @@ export class ZoteroDB {
     }
     aStmt.free();
 
-    // 2. Extract PDF attachments along with Parent Metadata
+    // 2. Extract PDF attachments along with Parent Metadata and abstracts
     const query = `
       SELECT
           i.key AS item_key,
           tv.value  AS title,
           GROUP_CONCAT(c.lastName || ', ' || c.firstName, '; ') AS authors,
           dv.value  AS year,
+          av.value  AS abstract,
           att.path  AS file_name,
           atti.key  AS storage_key
       FROM items i
@@ -60,18 +61,21 @@ export class ZoteroDB {
       LEFT JOIN itemDataValues tv ON tv.valueID = td.valueID
       LEFT JOIN itemData    dd   ON dd.itemID   = i.itemID AND dd.fieldID   = ${fids['date'] || -1}
       LEFT JOIN itemDataValues dv ON dv.valueID = dd.valueID
+      LEFT JOIN itemData    ad   ON ad.itemID   = i.itemID AND ad.fieldID   = ${fids['abstractNote'] || -1}
+      LEFT JOIN itemDataValues av ON av.valueID = ad.valueID
       LEFT JOIN itemCreators ic ON ic.itemID = i.itemID AND ic.creatorTypeID = ${authorTypeId}
       LEFT JOIN creators c ON c.creatorID = ic.creatorID
-      JOIN (
+      LEFT JOIN (
           SELECT parentItemID, MIN(itemID) AS itemID, path
           FROM itemAttachments
           WHERE contentType IN ('application/pdf', 'application/epub+zip', 'text/html') 
             AND path LIKE 'storage:%'
           GROUP BY parentItemID
       ) att ON att.parentItemID = i.itemID
-      JOIN items atti ON atti.itemID = att.itemID
+      LEFT JOIN items atti ON atti.itemID = att.itemID
       WHERE i.itemTypeID NOT IN (14, 26)
         AND tv.value IS NOT NULL
+        AND (atti.key IS NOT NULL OR (av.value IS NOT NULL AND TRIM(av.value) != ''))
       GROUP BY i.itemID
     `;
 
@@ -80,9 +84,9 @@ export class ZoteroDB {
     const stmt = db.prepare(query);
     while (stmt.step()) {
       const row = stmt.getAsObject();
-      const key = row.storage_key as string;
+      const key = (row.storage_key || row.item_key) as string;
       validKeys.push(key);
-      const fileName = (row.file_name as string).replace('storage:', '');
+      const fileName = row.file_name ? (row.file_name as string).replace('storage:', '') : '';
       
       // Format the Title as a BibTeX-style citation string
       let richTitle = fileName;

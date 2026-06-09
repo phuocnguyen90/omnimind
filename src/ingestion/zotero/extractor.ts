@@ -41,7 +41,20 @@ export class ZoteroExtractor {
    * Execution Phase: Processes a single job and returns the text content.
    */
   public async executeJob(jobPayload: any): Promise<ZoteroItem> {
-    const key = jobPayload.storage_key as string;
+    const key = (jobPayload.storage_key || jobPayload.item_key) as string;
+    const abstract = jobPayload.abstract as string;
+    
+    // If no attachment but there is an abstract, return the abstract directly
+    if (!jobPayload.storage_key && abstract) {
+      console.log(`[Zotero Extractor] Entry has no attachment. Ingesting abstract instead for key: ${key}`);
+      return {
+        key,
+        title: jobPayload.rich_title || "Unknown",
+        pdfPath: null,
+        textContent: `Abstract:\n\n${abstract}`
+      };
+    }
+    
     const fileName = (jobPayload.file_name as string).replace('storage:', '');
     const richTitle = jobPayload.rich_title || fileName;
     

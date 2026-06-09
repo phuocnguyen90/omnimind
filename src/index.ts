@@ -66,7 +66,9 @@ export async function main(context: any) {
         
         const maxConcurrentWorkers = globalConfig.get("maxConcurrentWorkers") || 4;
         const jobQueue = new JobQueue(maxConcurrentWorkers);
-        startControlServer(jobQueue, vectorStore);
+        
+        // Start in paused state so the UI is ready before processing starts
+        jobQueue.pause();
 
         // Handle the Execution Phase dynamically as jobs are popped from the queue
         jobQueue.on('process_job', async (job: Job, done: (err?: Error) => void) => {
@@ -100,67 +102,72 @@ export async function main(context: any) {
           }
         });
 
-        // Start Obsidian Ingestion
+        // Initialize Obsidian Ingestion
         const vaultPath = globalConfig.get("obsidianVaultPath") || "C:\\Users\\PC\\AppData\\Local\\SynologyDrive\\SystemFolders\\4\\Obsidian\\research";
         activeObsidianVaultPath = vaultPath;
         obsidianWatcher = new ObsidianVaultWatcher(vaultPath);
 
-        // Start Zotero Ingestion (Discovery Phase)
+        // Initialize Zotero Ingestion
         const zoteroDbPath = globalConfig.get("zoteroDbPath") || "E:\\Zotero\\zotero.sqlite";
         const zoteroStoragePath = globalConfig.get("zoteroStoragePath") || "E:\\Zotero\\storage";
-        
         zoteroExtractor = new ZoteroExtractor(zoteroDbPath, zoteroStoragePath, lmClient, syncTracker);
 
-        console.log("Started watching Obsidian vault:", vaultPath);
-        console.log("Starting Zotero database extraction:", zoteroDbPath);
+        // Launch the control server and then begin execution
+        startControlServer(jobQueue, vectorStore).then(() => {
+          console.log("Started watching Obsidian vault:", vaultPath);
+          console.log("Starting Zotero database extraction:", zoteroDbPath);
 
-        // Instantly populate the Queue with Pending Jobs
-        zoteroExtractor.discoverJobs(jobQueue).then(async (validKeys: string[]) => {
-          const validKeySet = new Set(validKeys);
-          const trackedKeys = syncTracker.getAllZoteroKeys();
-          
-          let orphanCount = 0;
-          for (const key of trackedKeys) {
-            if (!validKeySet.has(key)) {
-              console.log(`[Zotero Cleanup] Deleting stale vectors for orphaned item: ${key}`);
-              await vectorStore.deleteByPath(key);
-              syncTracker.removeZoteroKey(key);
-              orphanCount++;
+          // Instantly populate the Queue with Pending Jobs
+          zoteroExtractor.discoverJobs(jobQueue).then(async (validKeys: string[]) => {
+            const validKeySet = new Set(validKeys);
+            const trackedKeys = syncTracker.getAllZoteroKeys();
+            
+            let orphanCount = 0;
+            for (const key of trackedKeys) {
+              if (!validKeySet.has(key)) {
+                console.log(`[Zotero Cleanup] Deleting stale vectors for orphaned item: ${key}`);
+                await vectorStore.deleteByPath(key);
+                syncTracker.removeZoteroKey(key);
+                orphanCount++;
+              }
             }
-          }
-          if (orphanCount > 0) {
-            console.log(`[Zotero Cleanup] Cleaned up ${orphanCount} orphaned papers from LanceDB.`);
-          }
-        }).catch(err => console.error("Zotero Discovery Failed:", err));
-
-        // Watch Obsidian Vault
-        obsidianWatcher.watch(
-          async (filePath: string) => {
-            let mtimeMs = 0;
-            try {
-              mtimeMs = fs.statSync(filePath).mtimeMs;
-            } catch (e) {
-              return; // File deleted before stat
+            if (orphanCount > 0) {
+              console.log(`[Zotero Cleanup] Cleaned up ${orphanCount} orphaned papers from LanceDB.`);
             }
+          }).catch(err => console.error("Zotero Discovery Failed:", err));
 
-            if (syncTracker.getObsidianMtime(filePath) === mtimeMs) {
-              return; // Already processed!
+          // Watch Obsidian Vault
+          obsidianWatcher.watch(
+            async (filePath: string) => {
+              let mtimeMs = 0;
+              try {
+                mtimeMs = fs.statSync(filePath).mtimeMs;
+              } catch (e) {
+                return; // File deleted before stat
+              }
+
+              if (syncTracker.getObsidianMtime(filePath) === mtimeMs) {
+                return; // Already processed!
+              }
+
+              jobQueue.addJob({
+                id: filePath,
+                type: 'obsidian',
+                title: path.basename(filePath),
+                payload: { mtimeMs }
+              });
+            },
+            async (filePath: string) => {
+              // File was deleted
+              console.log(`[Obsidian Watcher] Deleting stale vectors for ${filePath}`);
+              await vectorStore.deleteByPath(filePath);
+              syncTracker.markObsidianDeleted(filePath);
             }
+          );
 
-            jobQueue.addJob({
-              id: filePath,
-              type: 'obsidian',
-              title: path.basename(filePath),
-              payload: { mtimeMs }
-            });
-          },
-          async (filePath: string) => {
-            // File was deleted
-            console.log(`[Obsidian Watcher] Deleting stale vectors for ${filePath}`);
-            await vectorStore.deleteByPath(filePath);
-            syncTracker.markObsidianDeleted(filePath);
-          }
-        );
+          // Resume the queue to start processing discovered jobs
+          jobQueue.resume();
+        });
       }
 
 

@@ -1,11 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { EmbeddingPipeline } from '../src/ingestion/embedder';
 
 test('EmbeddingPipeline', async (t) => {
+  const testWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnimind-test-embedder-'));
+
+  const cleanUp = () => {
+    try {
+      fs.rmSync(testWorkspaceDir, { recursive: true, force: true });
+    } catch (e) {}
+  };
+
+  t.after(cleanUp);
+
   const mockClient = {
     embedding: {
       model: async () => ({
+        identifier: 'mock-model',
+        path: '/mock/path',
         embed: async (textOrArray: string | string[]) => {
           if (Array.isArray(textOrArray)) {
             return textOrArray.map(() => ({ embedding: [0.1, 0.2, 0.3] }));
@@ -17,13 +32,13 @@ test('EmbeddingPipeline', async (t) => {
   };
 
   await t.test('generateEmbedding returns vector array', async () => {
-    const pipeline = new EmbeddingPipeline(mockClient);
+    const pipeline = new EmbeddingPipeline(mockClient, undefined, testWorkspaceDir);
     const result = await pipeline.generateEmbedding("Test string");
     assert.deepStrictEqual(result, [0.1, 0.2, 0.3]);
   });
 
   await t.test('processDocument chunks and batches correctly', async () => {
-    const pipeline = new EmbeddingPipeline(mockClient);
+    const pipeline = new EmbeddingPipeline(mockClient, undefined, testWorkspaceDir);
     const batches: any[] = [];
     
     const longText = "word ".repeat(500); // 2500 chars
